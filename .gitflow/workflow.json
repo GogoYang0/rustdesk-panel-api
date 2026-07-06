@@ -1,0 +1,67 @@
+{
+  "collaboration": "shared",
+  "commit_message_pattern": null,
+  "merge_method": "no-ff",
+  "primary_remote": "origin",
+  "profile": "classic-gitflow",
+  "revision": 1,
+  "roles": {
+    "develop": {
+      "allow_commit": false,
+      "create_from": [
+        "main"
+      ],
+      "merge_into": [],
+      "name": "develop",
+      "pattern": null,
+      "required": true
+    },
+    "feature": {
+      "allow_commit": true,
+      "create_from": [
+        "develop"
+      ],
+      "merge_into": [
+        "develop"
+      ],
+      "name": null,
+      "pattern": "feature/[a-z0-9][a-z0-9-]*",
+      "required": false
+    },
+    "hotfix": {
+      "allow_commit": true,
+      "create_from": [
+        "main"
+      ],
+      "merge_into": [
+        "main",
+        "develop"
+      ],
+      "name": null,
+      "pattern": "hotfix/[a-z0-9][a-z0-9.-]*",
+      "required": false
+    },
+    "main": {
+      "allow_commit": false,
+      "create_from": [],
+      "merge_into": [],
+      "name": "main",
+      "pattern": null,
+      "required": true
+    },
+    "release": {
+      "allow_commit": true,
+      "create_from": [
+        "develop"
+      ],
+      "merge_into": [
+        "main",
+        "develop"
+      ],
+      "name": null,
+      "pattern": "release/[0-9][a-z0-9.-]*",
+      "required": false
+    }
+  },
+  "schema_version": "1.0.0"
+}
