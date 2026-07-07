@@ -1,0 +1,90 @@
+name: Release
+
+# tag 触发：
+#   v1.2.3-rc.1 / -beta.1 / -alpha.1  -> pre-release（镜像不打 latest）
+#   v1.2.3                            -> 正式 release（镜像打 latest）
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - id: v
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          case "$version" in
+            *-rc.*|*-beta.*|*-alpha.*) echo "prerelease=true"  >> "$GITHUB_OUTPUT" ;;
+            *)                         echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          ARGS=(--title "rustdesk-panel-api v${VERSION}" --generate-notes)
+          if [ "$PRERELEASE" = "true" ]; then ARGS+=(--prerelease); fi
+          gh release create "v${VERSION}" out/* "${ARGS[@]}"
+
+  docker:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: "ghcr.io/${{ github.repository }}"
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ needs.prepare.outputs.prerelease == 'false' }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # 说明：DockerHub 推送任务待提供 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN 后补充
+  # （计划书 Q5 决议：编写 docker push 相关配置前先向项目所有者确认）。
