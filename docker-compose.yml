@@ -1,0 +1,32 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: panel_dev_root
+      MYSQL_DATABASE: rustdesk_panel
+      MYSQL_USER: panel
+      MYSQL_PASSWORD: panel_dev
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-ppanel_dev_root"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    environment:
+      HTTP_ADDR: ":8080"
+      DB_DRIVER: mysql
+      DB_DSN: "panel:panel_dev@tcp(mysql:3306)/rustdesk_panel?parseTime=true"
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  mysql-data:
