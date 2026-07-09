@@ -1,0 +1,33 @@
+openapi: 3.1.0
+info:
+  title: rustdesk-panel-api
+  description: >-
+    RustDesk 管理平台后端契约（单一契约源，oapi-codegen design-first）。
+    M0 仅包含健康检查端点；完整契约将按里程碑自参考项目端点清单补齐
+    （基准：《rustdesk-panel 重构计划书》附录 A/B，仅取契约、不搬实现）。
+  version: 0.0.0-nightly
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/healthz:
+    get:
+      summary: 健康检查
+      operationId: healthz
+      tags: [system]
+      responses:
+        "200":
+          description: 服务健康
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  version:
+                    type: string
+                  time:
+                    type: string
+                    format: date-time
