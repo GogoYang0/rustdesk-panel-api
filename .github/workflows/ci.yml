@@ -23,9 +23,9 @@ jobs:
           go-version: "1.27"
           cache: true
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
-          # 钉版本：需以 Go 1.27 构建的 lint 二进制（v1.x 无法分析 go 1.27 模块）
+          # 钉版本：v2.x 由 Go 1.27 构建（v1.x 无法分析 go 1.27 模块）；action v7 才支持 golangci-lint v2
           version: v2.14.0
       - name: go vet
         run: go vet ./...
