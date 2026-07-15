@@ -1,0 +1,7 @@
+# oapi-codegen 配置（design-first：openapi.yaml 是单一契约源）。
+# 仅生成 models（types.gen.go），handler 按 net/http 风格手写；
+# 生成物不手改，CI 以 `git diff --exit-code` 校验一致性。
+package: api
+output: internal/api/types.gen.go
+generate:
+  models: true

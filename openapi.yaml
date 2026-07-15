@@ -1,13 +1,21 @@
-openapi: 3.1.0
+openapi: 3.0.3
 info:
   title: rustdesk-panel-api
   description: >-
     RustDesk 管理平台后端契约（单一契约源，oapi-codegen design-first）。
-    M0 仅包含健康检查端点；完整契约将按里程碑自参考项目端点清单补齐
-    （基准：《rustdesk-panel 重构计划书》附录 A/B，仅取契约、不搬实现）。
-  version: 0.0.0-nightly
+    M1 交付 healthz + 认证域 + 用户自身端点共 25 个 path 定义。
+    错误响应统一 NestJS 包络 {statusCode, message, error}，
+    message 三种形态并存（业务对象 / 纯文本 / 校验字符串数组）；
+    POST 成功一律 200。限流 per-IP per-route（超限 429 ThrottlerException）。
+    契约基准：参考项目主分支实测（附录 A/B），仅取契约、不搬实现。
+  version: 1.0.0-m1
 servers:
   - url: http://localhost:8080
+tags:
+  - name: system
+  - name: auth
+  - name: oidc
+  - name: user
 paths:
   /api/healthz:
     get:
@@ -31,3 +39,940 @@ paths:
                   time:
                     type: string
                     format: date-time
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/login:
+    post:
+      summary: 登录（type 分支：account / tfa_code / email_code / sms_code）
+      description: 限流 5 次/分钟/IP。两步验证（tfa_code 等）返回
+        type=email_check + secret（5 分钟、单次使用）。
+      operationId: login
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: 登录结果（account 直接带 access_token；两步验证带 secret）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          description: 参数缺失或校验失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: 凭证错误或账号被禁用
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: 限流
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/login-options:
+    get:
+      summary: 登录方式选项（OIDC 提供商列表；参考源码实测为 GET）
+      description: 限流 20 次/分钟/IP。返回 ["oidc/{name}"] 或 [{name, icon}]。
+      operationId: loginOptions
+      tags: [oidc]
+      responses:
+        "200":
+          description: 登录选项数组
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  oneOf:
+                    - type: string
+                    - type: object
+                      required: [name]
+                      properties:
+                        name:
+                          type: string
+                        icon:
+                          type: string
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/logout:
+    post:
+      summary: 登出（撤销当前 jti + 设备维度撤销）
+      operationId: logout
+      tags: [auth]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoutRequest"
+      responses:
+        "200":
+          description: 登出成功（业务 JSON 直返）
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          description: 未认证
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/currentUser:
+    post:
+      summary: 当前用户信息（payload + tfa_enabled/has_password/verifier）
+      operationId: currentUser
+      tags: [auth]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        "200":
+          description: 用户 payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPayload"
+        "401":
+          description: 未认证或会话已撤销
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/2fa/setup:
+    post:
+      summary: 生成 TOTP 密钥（pending secret 存 users.info.other.tfa_pending_secret）
+      operationId: setupTfa
+      tags: [auth]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        "200":
+          description: TOTP secret 与 otpauth URL
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [secret, otpauth_url]
+                properties:
+                  secret:
+                    type: string
+                  otpauth_url:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/2fa/verify:
+    post:
+      summary: 校验并绑定 TOTP（校验通过后落 users.tfaSecret）
+      operationId: verifyTfa
+      tags: [auth]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tfaCode]
+              properties:
+                tfaCode:
+                  type: string
+                  minLength: 6
+                  maxLength: 6
+      responses:
+        "200":
+          description: 绑定结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/2fa:
+    delete:
+      summary: 关闭 2FA（需携带当前验证码）
+      operationId: disableTfa
+      tags: [auth]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tfaCode]
+              properties:
+                tfaCode:
+                  type: string
+      responses:
+        "200":
+          description: 关闭结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/passkey/register/begin:
+    post:
+      summary: 开始 Passkey 注册（返回 PublicKeyCredentialCreationOptionsJSON）
+      operationId: passkeyRegisterBegin
+      tags: [auth]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        "200":
+          description: WebAuthn 创建选项
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/passkey/register/verify:
+    post:
+      summary: 完成 Passkey 注册（挑战存 login_sessions method=passkey_reg）
+      operationId: passkeyRegisterVerify
+      tags: [auth]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [response]
+              properties:
+                response:
+                  type: object
+                name:
+                  type: string
+      responses:
+        "200":
+          description: 注册结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/passkey/auth/begin:
+    post:
+      summary: 开始 Passkey 免密登录（返回 {secret, options}）
+      description: 限流 10 次/分钟/IP；挑战存 login_sessions(method=passkey)。
+      operationId: passkeyAuthBegin
+      tags: [auth]
+      responses:
+        "200":
+          description: 会话 secret 与请求选项
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [secret, options]
+                properties:
+                  secret:
+                    type: string
+                  options:
+                    type: object
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/passkey/auth/verify:
+    post:
+      summary: 完成 Passkey 免密登录
+      description: 限流 10 次/分钟/IP。request：{secret, response, id?, uuid?, deviceInfo?}。
+      operationId: passkeyAuthVerify
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [secret, response]
+              properties:
+                secret:
+                  type: string
+                response:
+                  type: object
+                id:
+                  type: string
+                uuid:
+                  type: string
+                deviceInfo:
+                  $ref: "#/components/schemas/DeviceInfo"
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/passkey/list:
+    get:
+      summary: 当前用户 Passkey 凭据列表
+      operationId: passkeyList
+      tags: [auth]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        "200":
+          description: 凭据数组
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PasskeyView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/passkey/{guid}:
+    delete:
+      summary: 删除 Passkey 凭据
+      operationId: deletePasskey
+      tags: [auth]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 删除结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/passkey/tfa:
+    post:
+      summary: Passkey 作为二次验证开关（写 users.info.other.passkey_tfa_enabled）
+      operationId: passkeyTfaToggle
+      tags: [auth]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: 开关结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/sessions:
+    get:
+      summary: 当前用户活跃会话列表
+      operationId: listSessions
+      tags: [auth]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        "200":
+          description: SessionInfo 数组（createdAt 倒序）
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SessionInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/sessions/{jti}:
+    delete:
+      summary: 按 jti 撤销会话（撤销后该 token 立即 401）
+      operationId: revokeSession
+      tags: [auth]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - name: jti
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 撤销结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/oidc/auth:
+    post:
+      summary: 发起 OIDC 授权（返回授权 URL，建 oidc_auth_states，PKCE）
+      description: 限流 5 次/分钟/IP。
+      operationId: oidcAuth
+      tags: [oidc]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OidcAuthRequest"
+      responses:
+        "200":
+          description: 授权跳转 URL
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url]
+                properties:
+                  url:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/oidc/auth-query:
+    get:
+      summary: "客户端轮询授权结果（query: code/id/uuid）"
+      description: 限流 120 次/分钟/IP。
+      operationId: oidcAuthQuery
+      tags: [oidc]
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: query
+          schema:
+            type: string
+        - name: uuid
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "轮询结果（status: pending | success | error）"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [pending, success, error]
+                  token:
+                    type: string
+                  message:
+                    type: string
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/oidc/callback:
+    get:
+      summary: OIDC 提供商回调（HTML 页，客户端按 rememberMe 存储 token 后跳转）
+      operationId: oidcCallback
+      tags: [oidc]
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: error
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 回调 HTML 页面
+          content:
+            text/html:
+              schema:
+                type: string
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/users/me:
+    patch:
+      summary: 更新当前用户资料（display_name / email / note）
+      operationId: updateMe
+      tags: [user]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMeRequest"
+      responses:
+        "200":
+          description: 更新后的用户 payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPayload"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/users/me/password:
+    patch:
+      summary: 修改当前用户密码（bcrypt 复核旧密码）
+      description: 限流 5 次/分钟/IP。new_password 至少 6 位。
+      operationId: changeMyPassword
+      tags: [user]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "200":
+          description: 修改结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/users/me/avatar:
+    post:
+      summary: 上传头像（multipart 字段 avatar，仅 webp，≤2MB，文件名={guid}.webp）
+      description: 限流 10 次/分钟/IP。
+      operationId: uploadMyAvatar
+      tags: [user]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [avatar]
+              properties:
+                avatar:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: 上传结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AvatarResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: 删除头像
+      description: 限流 10 次/分钟/IP。
+      operationId: deleteMyAvatar
+      tags: [user]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        "200":
+          description: 删除结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/avatars/{filename}:
+    get:
+      summary: "静态头像（仅 ^[a-f0-9-]+\\.webp$，Cache-Control: public, max-age=86400）"
+      description: 限流 60 次/分钟/IP；resolve 防路径穿越。
+      operationId: getAvatar
+      tags: [user]
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-f0-9-]+\\.webp$"
+      responses:
+        "200":
+          description: webp 图片
+          content:
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+
+  schemas:
+    DeviceInfo:
+      type: object
+      properties:
+        os:
+          type: string
+        type:
+          type: string
+        name:
+          type: string
+
+    LoginRequest:
+      type: object
+      description: type 分支请求；account 需 username/password，
+        tfa_code 需 secret+tfaCode，email_code 需 secret+verificationCode。
+      properties:
+        type:
+          type: string
+          enum: [account, tfa_code, email_code, sms_code]
+          default: account
+        username:
+          type: string
+        password:
+          type: string
+        tfaCode:
+          type: string
+        secret:
+          type: string
+        verificationCode:
+          type: string
+        autoLogin:
+          type: boolean
+        id:
+          type: string
+          description: 设备 ID
+        uuid:
+          type: string
+          description: 设备 UUID
+        deviceInfo:
+          $ref: "#/components/schemas/DeviceInfo"
+
+    UserPayload:
+      type: object
+      description: 用户响应 payload（snake_case 契约，禁止规范化）。
+      required: [guid, name, is_admin]
+      properties:
+        guid:
+          type: string
+        name:
+          type: string
+        display_name:
+          type: string
+        email:
+          type: string
+        note:
+          type: string
+        is_admin:
+          type: boolean
+        tfa_enabled:
+          type: boolean
+        has_password:
+          type: boolean
+        verifier:
+          type: string
+        third_auth_type:
+          type: string
+        avatar:
+          type: string
+        user_group_guid:
+          type: string
+        strategy_guid:
+          type: string
+
+    LoginResponse:
+      type: object
+      description: 分支结构：account 带 access_token+user；
+        两步验证带 type=email_check + tfa_type + secret；
+        passkey_tfa 第一步复用 email_check 类型位并附 passkey_options。
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [account, email_check]
+        access_token:
+          type: string
+        user:
+          $ref: "#/components/schemas/UserPayload"
+        tfa_type:
+          type: string
+          enum: [tfa_check, passkey_check]
+        secret:
+          type: string
+        passkey_options:
+          type: object
+
+    LogoutRequest:
+      type: object
+      properties:
+        id:
+          type: string
+        uuid:
+          type: string
+
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    SessionInfo:
+      type: object
+      required: [jti, createdAt, expiresAt]
+      properties:
+        jti:
+          type: string
+        deviceId:
+          type: string
+        deviceUuid:
+          type: string
+        deviceOs:
+          type: string
+        deviceType:
+          type: string
+        deviceName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+
+    PasskeyView:
+      type: object
+      required: [guid]
+      properties:
+        guid:
+          type: string
+        name:
+          type: string
+        deviceType:
+          type: string
+        backedUp:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    OidcAuthRequest:
+      type: object
+      required: [provider]
+      properties:
+        provider:
+          type: string
+        deviceId:
+          type: string
+        deviceUuid:
+          type: string
+        deviceInfo:
+          $ref: "#/components/schemas/DeviceInfo"
+        frontendRedirectUrl:
+          type: string
+
+    UpdateMeRequest:
+      type: object
+      description: user 域请求字段为 snake_case（契约，禁止规范化）。
+      properties:
+        display_name:
+          type: string
+        email:
+          type: string
+          format: email
+        note:
+          type: string
+
+    ChangePasswordRequest:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+          minLength: 6
+
+    AvatarResponse:
+      type: object
+      required: [avatar]
+      properties:
+        avatar:
+          type: string
+
+    Error:
+      type: object
+      description: NestJS 默认错误包络；message 为对象/字符串/字符串数组三种形态之一。
+      required: [statusCode, message, error]
+      properties:
+        statusCode:
+          type: integer
+        message:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+            - type: object
+        error:
+          type: string
+
+  responses:
+    BadRequest:
+      description: 参数或校验失败
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: 未认证或会话已撤销
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Error:
+      description: 错误包络
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

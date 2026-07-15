@@ -29,7 +29,14 @@ jobs:
           version: v2.14.0
       - name: go vet
         run: go vet ./...
+      - name: oapi-codegen freshness check
+        run: |
+          # openapi.yaml 是单一契约源：types.gen.go 必须与其一致（重新生成后不得产生 diff）
+          go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.0 -config oapi-codegen.yaml openapi.yaml
+          git diff --exit-code internal/api/types.gen.go
       - name: go test (race)
         run: go test -race ./...
+      - name: contract tests
+        run: go test ./internal/contract/... -v
       - name: build (static)
         run: CGO_ENABLED=0 go build -trimpath -o bin/rustdesk-panel-api ./cmd/api
