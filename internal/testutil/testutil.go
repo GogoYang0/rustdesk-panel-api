@@ -13,11 +13,11 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 )
 
-// NewMemoryDB 创建唯一命名的 sqlite 内存库（cache=shared 使多连接可见同一库），
-// 并注册 t.Cleanup 关闭。
+// NewMemoryDB 创建唯一命名的 sqlite 内存库（cache=shared 使多连接可见同一库，
+// foreign_keys=1 使外键约束生效），并注册 t.Cleanup 关闭。
 func NewMemoryDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := fmt.Sprintf("file:rp_%s?mode=memory&cache=shared", uuid.New().String())
+	dsn := fmt.Sprintf("file:rp_%s?mode=memory&cache=shared&_pragma=foreign_keys(1)", uuid.New().String())
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		// 测试静默 GORM 日志，失败仍由断言暴露。
 		Logger: gormlogger.Discard,
