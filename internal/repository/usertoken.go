@@ -69,9 +69,11 @@ func (r *UserTokenRepo) ListActive(ctx context.Context, userGuid string) ([]enti
 	return list, err
 }
 
-// DeleteExpired 清理过期 token（cron 清理，T04 cleanup 接入）。
-func (r *UserTokenRepo) DeleteExpired(ctx context.Context, before time.Time) error {
-	return r.db.WithContext(ctx).
+// DeleteExpired 清理过期 token（cron 清理，T04 cleanup 接入）；
+// 返回删除行数。
+func (r *UserTokenRepo) DeleteExpired(ctx context.Context, before time.Time) (int64, error) {
+	res := r.db.WithContext(ctx).
 		Where("expiresAt < ?", before).
-		Delete(&entity.UserToken{}).Error
+		Delete(&entity.UserToken{})
+	return res.RowsAffected, res.Error
 }

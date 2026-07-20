@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -68,6 +69,27 @@ func (r *OidcRepo) FindStateByCode(ctx context.Context, code string) (*entity.Oi
 		return nil, err
 	}
 	return &s, nil
+}
+
+// FindStateByState 按 OAuth2 state 参数查找授权中间态（回调场景）。
+func (r *OidcRepo) FindStateByState(ctx context.Context, state string) (*entity.OidcAuthState, error) {
+	var s entity.OidcAuthState
+	err := r.db.WithContext(ctx).Where("state = ?", state).First(&s).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// DeleteExpiredStates 清理过期授权中间态（cron 清理），返回删除条数。
+func (r *OidcRepo) DeleteExpiredStates(ctx context.Context, before time.Time) (int64, error) {
+	res := r.db.WithContext(ctx).
+		Where("expiresAt < ?", before).
+		Delete(&entity.OidcAuthState{})
+	return res.RowsAffected, res.Error
 }
 
 // CompleteState 授权完结：更新 status/userGuid/accessToken。

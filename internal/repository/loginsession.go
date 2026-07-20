@@ -65,9 +65,10 @@ func (r *LoginSessionRepo) MarkUsed(ctx context.Context, guid string) error {
 		Update("used", true).Error
 }
 
-// DeleteExpired 清理过期会话（cron 清理）。
-func (r *LoginSessionRepo) DeleteExpired(ctx context.Context) error {
-	return r.db.WithContext(ctx).
+// DeleteExpired 清理过期会话（cron 清理）；返回删除行数。
+func (r *LoginSessionRepo) DeleteExpired(ctx context.Context) (int64, error) {
+	res := r.db.WithContext(ctx).
 		Where("expiresAt < ?", time.Now()).
-		Delete(&entity.LoginSession{}).Error
+		Delete(&entity.LoginSession{})
+	return res.RowsAffected, res.Error
 }

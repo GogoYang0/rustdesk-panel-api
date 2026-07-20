@@ -143,10 +143,10 @@ func TestUserRepoUniqueConstraints(t *testing.T) {
 	}
 	// oidcSubject 唯一。
 	sub := "oidc:github:42"
-	if err := r.users.WithSecrets(ctx).Create(&entity.User{Guid: uuid.New().String(), Username: "oidc1", OidcSubject: sub, Status: 1}).Error; err != nil {
+	if err := r.users.WithSecrets(ctx).Create(&entity.User{Guid: uuid.New().String(), Username: "oidc1", OidcSubject: &sub, Status: 1}).Error; err != nil {
 		t.Fatalf("first oidc user: %v", err)
 	}
-	if err := r.users.WithSecrets(ctx).Create(&entity.User{Guid: uuid.New().String(), Username: "oidc2", OidcSubject: sub, Status: 1}).Error; err == nil {
+	if err := r.users.WithSecrets(ctx).Create(&entity.User{Guid: uuid.New().String(), Username: "oidc2", OidcSubject: &sub, Status: 1}).Error; err == nil {
 		t.Error("duplicate oidcSubject should violate UK_users_oidcSubject")
 	}
 	// 按 subject 查找。
@@ -218,7 +218,7 @@ func TestUserTokenRepoExpiryAndList(t *testing.T) {
 	}
 
 	// 过期清理。
-	if err := r.tokens.DeleteExpired(ctx, now); err != nil {
+	if _, err := r.tokens.DeleteExpired(ctx, now); err != nil {
 		t.Fatalf("DeleteExpired: %v", err)
 	}
 	list2, _ := r.tokens.ListActive(ctx, "u-guid-6")
@@ -304,7 +304,7 @@ func TestLoginSessionRepoLifecycle(t *testing.T) {
 	if _, err := r.sess.FindUsable(ctx, "expired-1", StringSet{"tfa"}); !errors.Is(err, ErrNotFound) {
 		t.Error("expired session should not be usable")
 	}
-	if err := r.sess.DeleteExpired(ctx); err != nil {
+	if _, err := r.sess.DeleteExpired(ctx); err != nil {
 		t.Fatalf("DeleteExpired: %v", err)
 	}
 	if _, err := r.sess.FindByID(ctx, "expired-1"); !errors.Is(err, ErrNotFound) {
