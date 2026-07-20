@@ -13,21 +13,23 @@ import (
 // select:false 语义默认不查（UserRepo 公共列查询），凭
 // FindByUsernameOrEmail / FindByGuidWithSecrets 显式加载。
 type User struct {
-	Guid                  string    `gorm:"column:guid;primaryKey;size:36"`
-	Username              string    `gorm:"column:username;size:255;not null"`
-	DisplayName           string    `gorm:"column:displayName;size:255"`
-	Email                 string    `gorm:"column:email;size:255"`
-	Password              string    `gorm:"column:password;size:255"`
-	Note                  string    `gorm:"column:note"`
-	Verifier              string    `gorm:"column:verifier"`
-	Status                int       `gorm:"column:status;not null;default:0"`
-	IsAdmin               bool      `gorm:"column:isAdmin;not null;default:false"`
-	EmailVerificationCode string    `gorm:"column:emailVerificationCode;size:255"`
-	TfaSecret             string    `gorm:"column:tfaSecret;size:255"`
-	Info                  string    `gorm:"column:info"`
-	ThirdAuthType         string    `gorm:"column:thirdAuthType;size:255"`
-	OidcSubject           string    `gorm:"column:oidcSubject;size:255"`
-	Avatar                string    `gorm:"column:avatar;size:255"`
+	Guid                  string `gorm:"column:guid;primaryKey;size:36"`
+	Username              string `gorm:"column:username;size:255;not null"`
+	DisplayName           string `gorm:"column:displayName;size:255"`
+	Email                 string `gorm:"column:email;size:255"`
+	Password              string `gorm:"column:password;size:255"`
+	Note                  string `gorm:"column:note"`
+	Verifier              string `gorm:"column:verifier"`
+	Status                int    `gorm:"column:status;not null;default:0"`
+	IsAdmin               bool   `gorm:"column:isAdmin;not null;default:false"`
+	EmailVerificationCode string `gorm:"column:emailVerificationCode;size:255"`
+	TfaSecret             string `gorm:"column:tfaSecret;size:255"`
+	Info                  string `gorm:"column:info"`
+	ThirdAuthType         string `gorm:"column:thirdAuthType;size:255"`
+	// 可空唯一列（UK_users_oidcSubject）：本地账号必须保持 NULL，
+	// 非指针 string 的零值 "" 会占用唯一索引导致第二个本地账号无法创建。
+	OidcSubject *string `gorm:"column:oidcSubject;size:255"`
+	Avatar      string  `gorm:"column:avatar;size:255"`
 	// 可空外键列：SET NULL 语义（迁移 SQL 契约），用指针正确建模 NULL。
 	StrategyGuid  *string   `gorm:"column:strategyGuid;size:36"`
 	UserGroupGuid *string   `gorm:"column:userGroupGuid;size:36"`

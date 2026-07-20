@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"uuid"
 
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/entity"
 )
