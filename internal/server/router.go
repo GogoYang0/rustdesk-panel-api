@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"time"
 
+	"gorm.io/gorm"
+
+	"github.com/rustdesk-panel/rustdesk-panel-api/internal/config"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/httpx"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/middleware"
 )
@@ -20,18 +23,24 @@ type Router struct {
 	limiter   *middleware.RateLimiter
 	validator middleware.TokenValidator
 	handler   http.Handler
+	domain    *Domain
 }
 
 // RouterDeps 路由装配依赖。
 type RouterDeps struct {
 	Logger *slog.Logger
-	// Validator 为受保护路由的 token 校验器；注册受保护路由前必须注入。
+	// Validator 覆盖注入的 token 校验器（测试桩）；nil 且 DB 非空时
+	// 使用 Domain 内构建的真实 TokenService。
 	Validator middleware.TokenValidator
 	// RateLimitEnabled 对应 RATE_LIMIT_ENABLED。
 	RateLimitEnabled bool
+	// DB 非空时装配认证域（T04）；nil 仅注册系统端点（契约冒烟）。
+	DB *gorm.DB
+	// Config 认证域服务配置（JWT/WebAuthn）。
+	Config config.Config
 }
 
-// NewRouter 构建路由器并注册系统端点；域 handler 由 registerDomainHandlers 注入。
+// NewRouter 构建路由器：系统端点 + （注入 DB 时）认证域路由。
 func NewRouter(deps RouterDeps) *Router {
 	rt := &Router{
 		mux:       http.NewServeMux(),
@@ -39,7 +48,18 @@ func NewRouter(deps RouterDeps) *Router {
 		validator: deps.Validator,
 	}
 	rt.registerSystem()
-	rt.registerDomainHandlers(deps)
+	if deps.DB != nil {
+		domain, err := assembleDomain(deps)
+		if err != nil {
+			// 装配失败属启动期错误（如 WebAuthn 配置缺失），直接 panic。
+			panic("server: assemble auth domain failed: " + err.Error())
+		}
+		rt.domain = domain
+		if rt.validator == nil {
+			rt.validator = domain.Tokens
+		}
+		rt.registerDomainRoutes(domain)
+	}
 	rt.handler = middleware.Chain(rt.mux,
 		middleware.RequestID,
 		middleware.Recover(deps.Logger),
@@ -51,6 +71,9 @@ func NewRouter(deps RouterDeps) *Router {
 
 // Handler 返回装配完成的根 handler。
 func (rt *Router) Handler() http.Handler { return rt.handler }
+
+// Domain 返回装配好的认证域容器（main 启动 cron 清理用；未装配时 nil）。
+func (rt *Router) Domain() *Domain { return rt.domain }
 
 // Handle 注册一条路由。
 //
@@ -69,6 +92,11 @@ func (rt *Router) Handle(method, pattern string, public bool, perMinute int, h h
 	rt.mux.Handle(method+" "+pattern, h)
 }
 
+// hf 将方法转 handler（注册侧简化书写）。
+func hf(h func(http.ResponseWriter, *http.Request)) http.Handler {
+	return http.HandlerFunc(h)
+}
+
 // registerSystem 注册系统端点（M0 契约保持不变）。
 func (rt *Router) registerSystem() {
 	rt.mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -80,8 +108,34 @@ func (rt *Router) registerSystem() {
 	})
 }
 
-// registerDomainHandlers 注册业务域路由；M1 T04/T05 逐域接入，
-// T01 阶段无业务路由（仅 healthz）。
-func (rt *Router) registerDomainHandlers(deps RouterDeps) {
-	_ = deps
+// registerDomainRoutes 注册认证域路由（§2.1 #1~#19）。
+// 公开白名单：login、login-options、passkey/auth/*、oidc/*（共享知识 9）；
+// 限流参数表：login 5、login-options 20、passkey/auth 10、oidc/auth 5、
+// auth-query 120（avatars 于 T05 接入，60）。
+func (rt *Router) registerDomainRoutes(d *Domain) {
+	// ---- 公开端点 ----
+	rt.Handle(http.MethodPost, "/api/login", true, 5, hf(d.Auth.Login))
+	rt.Handle(http.MethodGet, "/api/login-options", true, 20, hf(d.Oidc.LoginOptions))
+	rt.Handle(http.MethodPost, "/api/passkey/auth/begin", true, 10, hf(d.Auth.PasskeyAuthBegin))
+	rt.Handle(http.MethodPost, "/api/passkey/auth/verify", true, 10, hf(d.Auth.PasskeyAuthVerify))
+	rt.Handle(http.MethodPost, "/api/oidc/auth", true, 5, hf(d.Oidc.RequestAuth))
+	rt.Handle(http.MethodGet, "/api/oidc/auth-query", true, 120, hf(d.Oidc.QueryAuth))
+	rt.Handle(http.MethodGet, "/api/oidc/callback", true, 0, hf(d.Oidc.Callback))
+
+	// ---- 受保护端点（JWT）----
+	rt.Handle(http.MethodPost, "/api/logout", false, 0, hf(d.Auth.Logout))
+	rt.Handle(http.MethodPost, "/api/currentUser", false, 0, hf(d.Auth.CurrentUser))
+	rt.Handle(http.MethodPost, "/api/2fa/setup", false, 0, hf(d.Auth.SetupTfa))
+	rt.Handle(http.MethodPost, "/api/2fa/verify", false, 0, hf(d.Auth.VerifyTfa))
+	rt.Handle(http.MethodDelete, "/api/2fa", false, 0, hf(d.Auth.DisableTfa))
+	rt.Handle(http.MethodPost, "/api/passkey/register/begin", false, 0, hf(d.Auth.PasskeyRegisterBegin))
+	rt.Handle(http.MethodPost, "/api/passkey/register/verify", false, 0, hf(d.Auth.PasskeyRegisterVerify))
+	rt.Handle(http.MethodGet, "/api/passkey/list", false, 0, hf(d.Auth.PasskeyList))
+	rt.Handle(http.MethodDelete, "/api/passkey/{guid}", false, 0, hf(d.Auth.PasskeyDelete))
+	rt.Handle(http.MethodPost, "/api/passkey/tfa", false, 0, hf(d.Auth.PasskeyTfaToggle))
+	rt.Handle(http.MethodGet, "/api/sessions", false, 0, hf(d.Auth.SessionsList))
+	rt.Handle(http.MethodDelete, "/api/sessions/{jti}", false, 0, hf(d.Auth.SessionRevoke))
+
+	// T05 接入：PATCH /api/users/me、PATCH /api/users/me/password、
+	// POST|DELETE /api/users/me/avatar、GET /api/avatars/{filename}。
 }
