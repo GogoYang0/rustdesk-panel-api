@@ -94,19 +94,22 @@ func (cs *contractServer) raw(t *testing.T, method, path string, body any, heade
 	t.Helper()
 
 	var reader io.Reader
+	var rawBody []byte
 	contentType := ""
 	switch b := body.(type) {
 	case nil:
 		reader = nil
 	case string:
+		rawBody = []byte(b)
 		reader = strings.NewReader(b)
 		contentType = "text/plain"
 	default:
-		raw, err := json.Marshal(body)
+		var err error
+		rawBody, err = json.Marshal(body)
 		if err != nil {
 			t.Fatalf("marshal request body: %v", err)
 		}
-		reader = bytes.NewReader(raw)
+		reader = bytes.NewReader(rawBody)
 		contentType = "application/json"
 	}
 
@@ -129,6 +132,16 @@ func (cs *contractServer) raw(t *testing.T, method, path string, body any, heade
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("read response: %v", err)
+	}
+
+	// ValidateRequest 会重新读取 req.Body；传输后 body 已耗尽，
+	// 校验前重置为未读副本。
+	if len(rawBody) > 0 {
+		req.Body = io.NopCloser(bytes.NewReader(rawBody))
+		req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(rawBody)), nil }
+	} else {
+		req.Body = http.NoBody
+		req.ContentLength = 0
 	}
 
 	if resp.StatusCode != expectStatus {
@@ -157,6 +170,12 @@ func (cs *contractServer) delete(t *testing.T, path string, headers map[string]s
 	return cs.raw(t, http.MethodDelete, path, nil, headers, expectStatus)
 }
 
+// contractAuthFunc security scheme 校验桩：bearerAuth 的真实语义
+// （JWT 有状态校验）由业务层承担，契约层只关心形状，恒放行。
+var contractAuthFunc openapi3filter.AuthenticationFunc = func(_ context.Context, _ *openapi3filter.AuthenticationInput) error {
+	return nil
+}
+
 // validatePair 对请求与响应做双向校验，返回首个契约违规错误。
 // 独立于 testing 失败机制，便于篡改用例断言"校验器必须失败"。
 func (cs *contractServer) validatePair(req *http.Request, status int, header http.Header, body []byte) error {
@@ -170,6 +189,7 @@ func (cs *contractServer) validatePair(req *http.Request, status int, header htt
 		Request:    req,
 		Route:      route,
 		PathParams: params,
+		Options:    &openapi3filter.Options{AuthenticationFunc: contractAuthFunc},
 	}
 	if err := openapi3filter.ValidateRequest(ctx, reqInput); err != nil {
 		return fmt.Errorf("request contract violation on %s %s: %w", req.Method, req.URL.Path, err)
