@@ -4,10 +4,10 @@ import (
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/handler"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/repository"
 	authsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/auth"
+	usersvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/user"
 )
 
-// Domain 装配完成的认证域服务容器（仓储 → 服务 → handler 全链）。
-// T05 将在此容器上扩展 user 域（ProfileService/AvatarService）。
+// Domain 装配完成的认证/用户域服务容器（仓储 → 服务 → handler 全链）。
 type Domain struct {
 	Tokens  *authsvc.TokenService
 	Login   *authsvc.AuthService
@@ -15,11 +15,14 @@ type Domain struct {
 	Passkey *authsvc.PasskeyService
 	OIDC    *authsvc.OidcFlowService
 	Cleanup *authsvc.CleanupService
+	Profile *usersvc.ProfileService
+	Avatar  *usersvc.AvatarService
 	Auth    *handler.AuthHandler
 	Oidc    *handler.OidcHandler
+	User    *handler.UserHandler
 }
 
-// assembleDomain 依 deps.DB 构建认证域容器（router 装配期一次性调用）。
+// assembleDomain 依 deps.DB 构建域容器（router 装配期一次性调用）。
 func assembleDomain(deps RouterDeps) (*Domain, error) {
 	users := repository.NewUserRepo(deps.DB)
 	tokenRepo := repository.NewUserTokenRepo(deps.DB)
@@ -39,11 +42,15 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	oidcSvc := authsvc.NewOidcFlowService(providers, users, groups, tokenSvc)
 	cleanupSvc := authsvc.NewCleanupService(tokenRepo, sessions, providers, deps.Logger)
 
+	profileSvc := usersvc.NewProfileService(users)
+	avatarSvc := usersvc.NewAvatarService(users, deps.Config.DataDir)
+
 	authH := handler.NewAuthHandler(loginSvc, tfaSvc, passkeySvc, tokenSvc)
 	oidcH, err := handler.NewOidcHandler(oidcSvc)
 	if err != nil {
 		return nil, err
 	}
+	userH := handler.NewUserHandler(profileSvc, avatarSvc)
 	return &Domain{
 		Tokens:  tokenSvc,
 		Login:   loginSvc,
@@ -51,7 +58,10 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 		Passkey: passkeySvc,
 		OIDC:    oidcSvc,
 		Cleanup: cleanupSvc,
+		Profile: profileSvc,
+		Avatar:  avatarSvc,
 		Auth:    authH,
 		Oidc:    oidcH,
+		User:    userH,
 	}, nil
 }

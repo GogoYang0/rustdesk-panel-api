@@ -136,6 +136,10 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 	rt.Handle(http.MethodGet, "/api/sessions", false, 0, hf(d.Auth.SessionsList))
 	rt.Handle(http.MethodDelete, "/api/sessions/{jti}", false, 0, hf(d.Auth.SessionRevoke))
 
-	// T05 接入：PATCH /api/users/me、PATCH /api/users/me/password、
-	// POST|DELETE /api/users/me/avatar、GET /api/avatars/{filename}。
+	// ---- 用户自身端点（JWT；#24 头像静态公开限流 60）----
+	rt.Handle(http.MethodPatch, "/api/users/me", false, 0, hf(d.User.UpdateMe))
+	rt.Handle(http.MethodPatch, "/api/users/me/password", false, 5, hf(d.User.ChangePassword))
+	rt.Handle(http.MethodPost, "/api/users/me/avatar", false, 10, hf(d.User.UploadAvatar))
+	rt.Handle(http.MethodDelete, "/api/users/me/avatar", false, 10, hf(d.User.DeleteAvatar))
+	rt.Handle(http.MethodGet, "/api/avatars/{filename}", true, 60, hf(d.User.GetAvatar))
 }
