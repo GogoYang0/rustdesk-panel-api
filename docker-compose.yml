@@ -21,12 +21,30 @@ services:
     environment:
       HTTP_ADDR: ":8080"
       DB_DRIVER: mysql
-      DB_DSN: "panel:panel_dev@tcp(mysql:3306)/rustdesk_panel?parseTime=true"
+      DB_DSN: "panel:panel_dev@tcp(mysql:3306)/rustdesk_panel?parseTime=true&loc=Local"
+      # JWT：生产部署必须更换（缺省值启动时打 WARNING）。
+      JWT_SECRET: "change-me-in-production"
+      JWT_EXPIRY_DAYS: "30"
+      # 数据目录（头像等静态文件根）。
+      DATA_DIR: /data
+      # WebAuthn Relying Party：须与前端访问域名/协议一致。
+      WEBAUTHN_RP_ID: localhost
+      WEBAUTHN_ORIGINS: "http://localhost:8080"
+      # 默认管理员种子（首次启动自动创建）。
+      ADMIN_USERNAME: databk
+      ADMIN_EMAIL: databk@github.com
+      ADMIN_PASSWORD: databk
+      # per-IP per-route 限流开关（参数表见 internal/server/router.go）。
+      RATE_LIMIT_ENABLED: "true"
+      LOG_LEVEL: info
     ports:
       - "8080:8080"
+    volumes:
+      - panel-data:/data
     depends_on:
       mysql:
         condition: service_healthy
 
 volumes:
   mysql-data:
+  panel-data:

@@ -9,9 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 
@@ -87,32 +87,16 @@ func newContractServerWith(t *testing.T, build func() *server.Router) *contractS
 	return &contractServer{TS: ts, Doc: doc, Router: router}
 }
 
-// raw 发送原始请求并做请求/响应双向契约校验；
-// body 为 any（JSON 序列化）、string（原样）或 nil。
-// 返回响应体原始字节。
-func (cs *contractServer) raw(t *testing.T, method, path string, body any, headers map[string]string, expectStatus int) []byte {
+// sendAndValidate 发送原始请求并返回（req, 响应头, 响应体），
+// 是 raw / postMultipart / invalid 的共用核心：
+// 传输后重置 req.Body（ValidateRequest 会重新读取），并断言状态码。
+func (cs *contractServer) sendAndValidate(t *testing.T, method, path, contentType string, rawBody []byte, headers map[string]string, expectStatus int) (*http.Request, http.Header, []byte) {
 	t.Helper()
 
 	var reader io.Reader
-	var rawBody []byte
-	contentType := ""
-	switch b := body.(type) {
-	case nil:
-		reader = nil
-	case string:
-		rawBody = []byte(b)
-		reader = strings.NewReader(b)
-		contentType = "text/plain"
-	default:
-		var err error
-		rawBody, err = json.Marshal(body)
-		if err != nil {
-			t.Fatalf("marshal request body: %v", err)
-		}
+	if rawBody != nil {
 		reader = bytes.NewReader(rawBody)
-		contentType = "application/json"
 	}
-
 	req, err := http.NewRequest(method, cs.TS.URL+path, reader)
 	if err != nil {
 		t.Fatalf("build request: %v", err)
@@ -147,8 +131,82 @@ func (cs *contractServer) raw(t *testing.T, method, path string, body any, heade
 	if resp.StatusCode != expectStatus {
 		t.Fatalf("%s %s status = %d, want %d (body: %s)", method, path, resp.StatusCode, expectStatus, respBytes)
 	}
-	if err := cs.validatePair(req, resp.StatusCode, resp.Header, respBytes); err != nil {
+	return req, resp.Header, respBytes
+}
+
+// raw 发送原始请求并做请求/响应双向契约校验；
+// body 为 any（JSON 序列化）、string（原样）或 nil。
+func (cs *contractServer) raw(t *testing.T, method, path string, body any, headers map[string]string, expectStatus int) []byte {
+	t.Helper()
+	var rawBody []byte
+	contentType := ""
+	switch b := body.(type) {
+	case nil:
+	case string:
+		rawBody = []byte(b)
+		contentType = "text/plain"
+	default:
+		var err error
+		rawBody, err = json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal request body: %v", err)
+		}
+		contentType = "application/json"
+	}
+	req, header, respBytes := cs.sendAndValidate(t, method, path, contentType, rawBody, headers, expectStatus)
+	if err := cs.validatePair(req, expectStatus, header, respBytes); err != nil {
 		t.Errorf("%v", err)
+	}
+	return respBytes
+}
+
+// multipartBytes 构造 multipart/form-data 原始字节，返回 Content-Type 与 body。
+func multipartBytes(t *testing.T, field, filename string, content []byte) (string, []byte) {
+	t.Helper()
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	fw, err := w.CreateFormFile(field, filename)
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := fw.Write(content); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	return w.FormDataContentType(), buf.Bytes()
+}
+
+// postMultipart 上传 multipart 请求并做双向契约校验。
+func (cs *contractServer) postMultipart(t *testing.T, path, field, filename string, content []byte, headers map[string]string, expectStatus int) []byte {
+	t.Helper()
+	contentType, rawBody := multipartBytes(t, field, filename, content)
+	req, header, respBytes := cs.sendAndValidate(t, http.MethodPost, path, contentType, rawBody, headers, expectStatus)
+	if err := cs.validatePair(req, expectStatus, header, respBytes); err != nil {
+		t.Errorf("%v", err)
+	}
+	return respBytes
+}
+
+// invalid 发送故意违反请求契约的输入（format: email / minLength / 路径
+// pattern 违规等），断言两道防线：(1) 契约校验器必须拒绝该请求；
+// (2) 服务端防线仍以 expectStatus 错误包络拒绝（响应形状由
+// assertEnvelopeShape 保证；请求违规时 validatePair 不会做响应校验）。
+func (cs *contractServer) invalid(t *testing.T, method, path string, body any, headers map[string]string, expectStatus int) []byte {
+	t.Helper()
+	var rawBody []byte
+	if body != nil {
+		var err error
+		rawBody, err = json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal request body: %v", err)
+		}
+	}
+	req, _, respBytes := cs.sendAndValidate(t, method, path, "application/json", rawBody, headers, expectStatus)
+	assertEnvelopeShape(t, respBytes, expectStatus)
+	if verr := cs.validatePair(req, expectStatus, nil, respBytes); verr == nil {
+		t.Errorf("expected contract violation on %s %s, but validator accepted the request", method, path)
 	}
 	return respBytes
 }
