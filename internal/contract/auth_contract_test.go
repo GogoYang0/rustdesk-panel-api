@@ -316,3 +316,98 @@ func TestContractPasskeyAuthBegin(t *testing.T) {
 		t.Errorf("options.publicKey missing: %v", options)
 	}
 }
+
+// TestContractPasskeyLifecycle passkey 免密登录全链路契约
+// （补齐 passkeyTfaToggle / passkeyAuthVerify / deletePasskey 三个操作，
+// 使 spec 全部 25 个 operation 均有契约用例覆盖 —— M1 退出标准）。
+func TestContractPasskeyLifecycle(t *testing.T) {
+	cs, as := newAuthContractServer(t)
+	_, login := contractLogin(t, cs, "databk")
+	token := login["access_token"].(string)
+	user, _ := login["user"].(map[string]any)
+	userGuid, _ := user["guid"].(string)
+	if userGuid == "" {
+		t.Fatalf("login user.guid missing: %v", login)
+	}
+
+	// 注册 passkey：userHandle 必须为真实 guid（发现式登录比对 WebAuthnID）。
+	authr, err := testutil.NewSoftAuthenticator(as.Config.WebAuthnRPID, as.Config.WebAuthnOrigins[0], []byte(userGuid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := cs.post(t, "/api/passkey/register/begin", nil, bearer(token), 200)
+	var begin map[string]any
+	if err := json.Unmarshal(raw, &begin); err != nil {
+		t.Fatal(err)
+	}
+	challenge, _ := begin["publicKey"].(map[string]any)["challenge"].(string)
+	regResp, err := authr.CreateRegistrationResponse(challenge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs.post(t, "/api/passkey/register/verify", map[string]any{"response": regResp, "name": "contract-key"}, bearer(token), 200)
+
+	// 开启 passkey 2FA → 200 MessageResponse（passkeyTfaToggle）。
+	raw = cs.post(t, "/api/passkey/tfa", map[string]any{"enabled": true}, bearer(token), 200)
+	var toggle map[string]any
+	if err := json.Unmarshal(raw, &toggle); err != nil {
+		t.Fatal(err)
+	}
+	if toggle["message"] == "" {
+		t.Errorf("toggle message = %v", toggle)
+	}
+
+	// 密码登录第一步 → passkey_check 分支（开关生效的业务证据）。
+	raw = cs.post(t, "/api/login", map[string]any{
+		"type": "account", "username": "databk", "password": "databk",
+	}, nil, 200)
+	var step1 map[string]any
+	if err := json.Unmarshal(raw, &step1); err != nil {
+		t.Fatal(err)
+	}
+	if step1["tfa_type"] != "passkey_check" {
+		t.Fatalf("tfa_type = %v, want passkey_check", step1["tfa_type"])
+	}
+	passkeyOptions, _ := step1["passkey_options"].(map[string]any)
+	publicKey, _ := passkeyOptions["publicKey"].(map[string]any)
+	stepSecret, _ := step1["secret"].(string)
+	if publicKey == nil || stepSecret == "" {
+		t.Fatalf("step1 missing passkey_options/secret: %v", step1)
+	}
+
+	// 第二步断言 → 200 LoginResponse account 分支（passkeyAuthVerify）。
+	assertResp, err := authr.CreateAssertionResponse(publicKey["challenge"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = cs.post(t, "/api/passkey/auth/verify", map[string]any{
+		"secret": stepSecret, "response": assertResp,
+		"id": "dev-1", "uuid": "uuid-1",
+		"deviceInfo": map[string]any{"name": "contract-web", "os": "linux", "type": "web"},
+	}, nil, 200)
+	var step2 map[string]any
+	if err := json.Unmarshal(raw, &step2); err != nil {
+		t.Fatal(err)
+	}
+	if step2["type"] != "account" {
+		t.Errorf("step2 type = %v", step2["type"])
+	}
+	if _, ok := step2["access_token"].(string); !ok {
+		t.Errorf("step2 access_token missing: %v", step2)
+	}
+
+	// 凭据列表取 guid → 删除 → 200 MessageResponse（deletePasskey）。
+	raw = cs.get(t, "/api/passkey/list", bearer(token), 200)
+	var views []map[string]any
+	if err := json.Unmarshal(raw, &views); err != nil {
+		t.Fatal(err)
+	}
+	if len(views) != 1 {
+		t.Fatalf("views = %v", views)
+	}
+	guid, _ := views[0]["guid"].(string)
+	if guid == "" {
+		t.Fatal("passkey guid missing")
+	}
+	cs.delete(t, "/api/passkey/"+guid, bearer(token), 200)
+}
