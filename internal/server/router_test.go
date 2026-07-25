@@ -27,7 +27,7 @@ func TestHealthzSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/healthz: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
@@ -67,7 +67,7 @@ func TestProtectedRouteWiring(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/sessions: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 401 {
 		t.Errorf("protected route without token = %d, want 401", resp.StatusCode)
 	}
@@ -77,7 +77,7 @@ func TestProtectedRouteWiring(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/login: %v", err)
 	}
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if resp2.StatusCode != 200 {
 		t.Errorf("public route = %d, want 200", resp2.StatusCode)
 	}
@@ -99,13 +99,13 @@ func TestRateLimitWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("POST: %v", err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	resp, err := ts.Client().Post(ts.URL+"/api/login", "application/json", nil)
 	if err != nil {
 		t.Fatalf("POST: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 429 {
 		t.Errorf("throttled request = %d, want 429", resp.StatusCode)
 	}

@@ -111,7 +111,7 @@ func TestQATfaVerifyWrongCodeKeepsPendingRetriable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	status, parsed, raw = doJSON(t, ts.TS.Client(), http.MethodPost, ts.TS.URL+"/api/2fa/verify",
+	status, _, raw = doJSON(t, ts.TS.Client(), http.MethodPost, ts.TS.URL+"/api/2fa/verify",
 		map[string]any{"tfaCode": code}, authHeader(token))
 	if status != 200 {
 		t.Fatalf("retried verify status = %d: %s", status, raw)

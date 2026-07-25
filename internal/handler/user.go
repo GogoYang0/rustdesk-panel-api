@@ -64,7 +64,7 @@ func (h *UserHandler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 		httpx.ErrBadRequest(w, "Avatar file is required")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	ident := middleware.IdentityFromContext(r.Context())
 	res, err := h.avatar.Upload(r.Context(), ident.UserGuid, file, header.Size)
