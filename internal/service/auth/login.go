@@ -80,24 +80,6 @@ func (s *AuthService) loginAccount(ctx context.Context, req *api.LoginRequest, d
 	return s.completeLogin(ctx, user, dev)
 }
 
-// completeTwoStep 场景 B 后半段：验证码通过后的统一签发。
-func (s *AuthService) completeTwoStep(ctx context.Context, sess *entity.LoginSession, dev dto.LoginDevice) (*api.LoginResponse, error) {
-	user, err := s.users.FindByGuidWithSecrets(ctx, sess.UserGuid)
-	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			return nil, Unauthorized(msgStepSessionInvalid)
-		}
-		return nil, err
-	}
-	if user.Status != 1 {
-		return nil, Unauthorized(msgUserDisabled)
-	}
-	if err := s.tfa.sessions.MarkUsed(ctx, sess.Guid); err != nil {
-		return nil, err
-	}
-	return s.completeLogin(ctx, user, dev)
-}
-
 // completeLogin 签发最终会话并组装 account 响应（场景 A/B/C 收敛点）。
 func (s *AuthService) completeLogin(ctx context.Context, user *entity.User, dev dto.LoginDevice) (*api.LoginResponse, error) {
 	token, err := s.tokens.Generate(ctx, user, dev)

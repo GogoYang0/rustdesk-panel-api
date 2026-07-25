@@ -55,7 +55,7 @@ func doJSON(t *testing.T, client *http.Client, method, rawURL string, body any, 
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, rawURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("read body: %v", err)
@@ -489,7 +489,7 @@ func TestPasskeyRegisterAndLogin(t *testing.T) {
 	authr := registerPasskey(t, ts, token, userGuid)
 
 	// 列表。
-	status, _, raw := doJSON(t, ts.TS.Client(), http.MethodGet, ts.TS.URL+"/api/passkey/list", nil, authHeader(token))
+	_, _, raw := doJSON(t, ts.TS.Client(), http.MethodGet, ts.TS.URL+"/api/passkey/list", nil, authHeader(token))
 	var views []map[string]any
 	if err := json.Unmarshal(raw, &views); err != nil || len(views) != 1 {
 		t.Fatalf("passkey list = %s (err %v)", raw, err)
@@ -642,7 +642,7 @@ func newFakeProvider(t *testing.T) *fakeProvider {
 	})
 	mux.HandleFunc("/userinfo", func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer fp-access-token" {
-			http.Error(w, "unauthorized", 401)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -698,7 +698,7 @@ func runOidcFlow(t *testing.T, ts *apptest.AppServer, extra map[string]any) stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		t.Fatalf("callback status = %d", resp.StatusCode)
 	}
@@ -715,7 +715,7 @@ func TestOidcFullFlow(t *testing.T) {
 	seedProvider(t, ts, fp)
 
 	// login-options：无 icon → 字符串数组形态。
-	status, _, raw := doJSON(t, ts.TS.Client(), http.MethodGet, ts.TS.URL+"/api/login-options", nil, nil)
+	_, _, raw := doJSON(t, ts.TS.Client(), http.MethodGet, ts.TS.URL+"/api/login-options", nil, nil)
 	var options []any
 	if err := json.Unmarshal(raw, &options); err != nil || len(options) != 1 {
 		t.Fatalf("login-options = %s (err %v)", raw, err)
@@ -753,7 +753,7 @@ func TestOidcFullFlow(t *testing.T) {
 
 	// 同一 subject 二次授权 → 幂等复用同一账号。
 	pollCode2 := runOidcFlow(t, ts, nil)
-	status, parsed, _ = doJSON(t, ts.TS.Client(), http.MethodGet,
+	_, parsed, _ = doJSON(t, ts.TS.Client(), http.MethodGet,
 		ts.TS.URL+"/api/oidc/auth-query?code="+url.QueryEscape(pollCode2), nil, nil)
 	if parsed["status"] != "success" {
 		t.Fatalf("second flow status = %v", parsed["status"])

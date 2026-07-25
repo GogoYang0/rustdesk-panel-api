@@ -9,11 +9,9 @@ import (
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/entity"
 )
 
-// sensitiveUserColumns 按参考 select:false 语义默认排除的敏感列
-// （共享知识 5：仓储默认不查，凭 WithSecrets 系列方法显式加载）。
-var sensitiveUserColumns = []string{"password", "verifier", "tfaSecret", "emailVerificationCode"}
-
 // PublicUserColumns 公共列清单（顺序稳定，供 Select 与列断言测试）。
+// 敏感列（password/verifier/tfaSecret/emailVerificationCode）经白名单
+// 方式默认排除，凭 WithSecrets 系列方法显式加载。
 var PublicUserColumns = []string{
 	"guid", "username", "displayName", "email", "note", "status", "isAdmin",
 	"info", "thirdAuthType", "oidcSubject", "avatar", "strategyGuid",

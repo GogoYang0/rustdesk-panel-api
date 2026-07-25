@@ -53,7 +53,7 @@ func uploadAvatarBytes(t *testing.T, ts *apptest.AppServer, token string, payloa
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestQAAvatarByteRoundtripAndFileCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,12 +147,12 @@ func TestQAAvatarTraversalVariantsNeverLeak(t *testing.T) {
 	}
 
 	variants := []string{
-		"..%2f..%2fgo.mod",                 // 编码斜杠回溯
-		"%2e%2e%2fmain.go",                 // 全编码点段
-		"..%5csecret.webp",                 // 反斜杠变体
-		"a%00.webp",                        // 空字节注入
-		"sub%2fdir%2ftrick.webp",           // 段内路径分隔
-		"....webp",                         // 非法字符（点不在白名单）
+		"..%2f..%2fgo.mod",                  // 编码斜杠回溯
+		"%2e%2e%2fmain.go",                  // 全编码点段
+		"..%5csecret.webp",                  // 反斜杠变体
+		"a%00.webp",                         // 空字节注入
+		"sub%2fdir%2ftrick.webp",            // 段内路径分隔
+		"....webp",                          // 非法字符（点不在白名单）
 		"e04e2b1e-0000-4000-8000-!bad.webp", // 混入白名单外字符
 	}
 	for _, name := range variants {
@@ -165,7 +165,7 @@ func TestQAAvatarTraversalVariantsNeverLeak(t *testing.T) {
 			t.Fatalf("GET avatar %q: %v", name, err)
 		}
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
 			t.Errorf("avatar traversal variant %q returned 200 and must never leak content: %q", name, body)
 		}

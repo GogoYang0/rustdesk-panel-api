@@ -152,7 +152,7 @@ func TestQACookieTokenChannelEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("cookie channel status = %d, want 200", resp.StatusCode)
 	}
@@ -168,7 +168,7 @@ func TestQACookieTokenChannelEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if resp2.StatusCode != 401 {
 		t.Fatalf("bearer priority status = %d, want 401", resp2.StatusCode)
 	}

@@ -143,12 +143,18 @@ func (a *SoftAuthenticator) rpIDHash() []byte {
 
 // coseKey EC2/P-256/ES256 COSE 公钥：{1:2, 3:-7, -1:1, -2:x, -3:y}。
 func (a *SoftAuthenticator) coseKey() map[int32]any {
-	pub := a.Key.PublicKey
-	x := make([]byte, 32)
-	y := make([]byte, 32)
-	pub.X.FillBytes(x)
-	pub.Y.FillBytes(y)
-	return map[int32]any{1: int64(2), 3: int64(-7), -1: int64(1), -2: x, -3: y}
+	// Go 1.26 起 PublicKey.X/Y 大数坐标访问已 deprecated：经 uncompressed
+	// point 序列化（0x04 || X || Y，65 字节）拆出 32 字节大端坐标，
+	// 与原 FillBytes(X/Y) 语义等价。
+	raw, err := a.Key.PublicKey.Bytes()
+	if err != nil {
+		// 构造错误直接 panic（测试工具，P-256 固定不会发生）。
+		panic("testutil: encode public key: " + err.Error())
+	}
+	return map[int32]any{
+		1: int64(2), 3: int64(-7), -1: int64(1),
+		-2: raw[1:33], -3: raw[33:65],
+	}
 }
 
 // publicKeyCredentialJSON 组装 PublicKeyCredential 顶层形状。

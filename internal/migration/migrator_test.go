@@ -164,7 +164,7 @@ func actualColumns(t *testing.T, db *gorm.DB, table string) []string {
 
 // entityColumns 反射实体 GORM tag 的 column:xxx（与迁移 SQL 比对）。
 func entityColumns(t reflect.Type) []string {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	cols := make([]string, 0, t.NumField())

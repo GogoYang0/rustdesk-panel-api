@@ -54,7 +54,7 @@ func uploadAvatar(t *testing.T, ts *apptest.AppServer, token string, payload []b
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +174,7 @@ func TestAvatarLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		t.Fatalf("avatar GET status = %d", resp.StatusCode)
 	}
