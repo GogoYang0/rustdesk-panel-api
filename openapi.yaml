@@ -3,12 +3,15 @@ info:
   title: rustdesk-panel-api
   description: >-
     RustDesk 管理平台后端契约（单一契约源，oapi-codegen design-first）。
-    M1 交付 healthz + 认证域 + 用户自身端点共 25 个 path 定义。
+    M1 交付 healthz + 认证域 + 用户自身端点共 25 个 operation；
+    M2 交付核心业务域 43 个 operation（设备端协议 heartbeat/sysinfo、
+    设备/设备组、策略、RBAC、用户组），总计 68 个 operation。
     错误响应统一 NestJS 包络 {statusCode, message, error}，
     message 三种形态并存（业务对象 / 纯文本 / 校验字符串数组）；
-    POST 成功一律 200。限流 per-IP per-route（超限 429 ThrottlerException）。
+    POST 成功一律 200。限流 per-IP per-route（超限 429 ThrottlerException）；
+    设备端协议为设备维度限流（tracker=id→uuid→IP）。
     契约基准：参考项目主分支实测（附录 A/B），仅取契约、不搬实现。
-  version: 1.0.0-m1
+  version: 1.1.0-m2
 servers:
   - url: http://localhost:8080
 tags:
@@ -16,6 +19,11 @@ tags:
   - name: auth
   - name: oidc
   - name: user
+  - name: device
+  - name: device-group
+  - name: strategy
+  - name: rbac
+  - name: user-group
 paths:
   /api/healthz:
     get:
@@ -730,7 +738,1502 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  # ==================== M2 设备端协议（公开端点 + 设备维度限流） ====================
+  /api/heartbeat:
+    post:
+      summary: 设备心跳上报（无鉴权；设备维度限流 10 次/分钟，tracker=id→uuid→IP）
+      description: >-
+        未知设备自动注册（首跳 INSERT ON CONFLICT UPDATE）。响应条件键：
+        有 pending 断连时含 disconnect；解析出策略且 strategy.updatedAt(毫秒)
+        严格大于报文 modified_at 时含 strategy.config_options 与新 modified_at；
+        均未命中时为 {}。未知字段 400（forbidNonWhitelisted 语义）。
+      operationId: heartbeat
+      tags: [device]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HeartbeatRequest"
+      responses:
+        "200":
+          description: 心跳确认（条件键响应，可为空对象）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeartbeatResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          description: 设备维度限流
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/sysinfo:
+    post:
+      summary: 设备系统信息上报（无鉴权；设备维度限流 5 次/分钟，tracker=id→uuid→IP）
+      description: >-
+        按 uuid 查 peers，不存在直接返回 ID_NOT_FOUND（不自动注册）；存在则
+        upsert sysinfos（核心字段"提供即覆盖"、preset 列"非空真值才覆盖"），
+        并处理 preset-device-group-name 关联与 preset-note 兜底写入；
+        preset-address-book-* 字段接受但不处理（M3 通讯录联动）。
+        响应恒为 text/plain 且 HTTP 200。
+      operationId: sysinfo
+      tags: [device]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SysinfoRequest"
+      responses:
+        "200":
+          description: "SYSINFO_UPDATED（设备已注册并更新）或 ID_NOT_FOUND（设备未注册）"
+          content:
+            text/plain:
+              schema:
+                type: string
+                enum: [SYSINFO_UPDATED, ID_NOT_FOUND]
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          description: 设备维度限流
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  # ==================== M2 设备域（peers 同表两视图） ====================
+  /api/peers:
+    get:
+      summary: 可见设备列表（无权限码，JWT + 状态复核；三源可见性过滤）
+      description: >-
+        非管理员可见 = 自己名下设备 ∪ device_group_user_permissions 授权组内设备
+        ∪ user_user_permissions 被授权用户的设备；管理员全量。
+        过滤语义：id/user_name/device_group_name/os 均 LIKE（os 查 sysinfos），
+        device_group_guid 精确；排序 peer.id ASC（字符串序）。
+      operationId: listPeers
+      tags: [device]
+      parameters:
+        - name: accessible
+          in: query
+          required: false
+          description: 兼容字段，忽略
+          schema:
+            type: string
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["0", "1"]
+        - name: is_online
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["0", "1"]
+        - name: user_name
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: device_group_guid
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: device_group_name
+          in: query
+          required: false
+          description: LIKE 匹配（与 /devices 的精确匹配不同）
+          schema:
+            type: string
+        - name: os
+          in: query
+          required: false
+          description: LIKE 匹配 sysinfos.os
+          schema:
+            type: string
+        - $ref: "#/components/parameters/CurrentParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: 可见设备分页
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeerPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/devices:
+    get:
+      summary: 管理设备列表（devices.view；RBAC scope 边界）
+      description: >-
+        scoped 操作者排除未分组设备。过滤语义差异（与 /peers 相比）：
+        device_group_name 精确匹配；id/user_name/os 精确；
+        device_name LIKE sysinfos.hostname；device_username LIKE sysinfos.username；
+        group_name LIKE 设备组名；排序 peer.id ASC。
+      operationId: listDevices
+      tags: [device]
+      parameters:
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["0", "1"]
+        - name: is_online
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["0", "1"]
+        - name: device_name
+          in: query
+          required: false
+          description: LIKE 匹配 sysinfos.hostname
+          schema:
+            type: string
+        - name: user_name
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: device_username
+          in: query
+          required: false
+          description: LIKE 匹配 sysinfos.username
+          schema:
+            type: string
+        - name: os
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: device_group_name
+          in: query
+          required: false
+          description: 精确匹配（与 /peers 的 LIKE 不同）
+          schema:
+            type: string
+        - name: device_group_guid
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: group_name
+          in: query
+          required: false
+          description: LIKE 匹配设备组名
+          schema:
+            type: string
+        - $ref: "#/components/parameters/CurrentParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: scope 边界内设备分页
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DevicePage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/devices/status:
+    patch:
+      summary: 批量启停设备（devices.status；body guids 为 peer.uuid 数组）
+      description: >-
+        status 为 'enabled' | 'disabled'（DB peers.status 1=正常/0=停用）。
+        逐个经 AssertDevicesAccess 复核，任一越权整体 403。
+      operationId: updateDeviceStatus
+      tags: [device]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceStatusUpdateRequest"
+      responses:
+        "200":
+          description: 批量结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceStatusUpdateResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/devices/{guid}:
+    patch:
+      summary: 更新设备（devices.edit；guid = peer.uuid）
+      description: >-
+        关联字段（userName/deviceGroupName/strategyName，按名称匹配）变更需
+        super administrator；空串表示解绑；note 任意 devices.edit 操作者可改。
+      operationId: updateDevice
+      tags: [device]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDeviceRequest"
+      responses:
+        "200":
+          description: 更新后的设备视图
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: 删除设备（devices.delete；guid = peer.uuid）
+      description: 服务层事务显式级联删除 active_connections。
+      operationId: deleteDevice
+      tags: [device]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 删除成功（空对象）
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/devices/{uuid}/disconnect:
+    post:
+      summary: 断开设备连接（devices.disconnect；入队内存断连队列）
+      description: >-
+        校验设备存在（404）与 scope（403）后，将 connIds 加入断连队列，
+        客户端下一次心跳收到 disconnect 键。响应 pending_disconnect_count
+        为当前 pending 总数。
+      operationId: disconnectDevice
+      tags: [device]
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DisconnectRequest"
+      responses:
+        "200":
+          description: 已入队
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DisconnectResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  # ==================== M2 设备组域 ====================
+  /api/device-group/accessible:
+    get:
+      summary: 当前用户可访问的设备组（无权限码，JWT + 状态复核）
+      description: 非管理员 = device_group_user_permissions 授权组；管理员全量。
+      operationId: accessibleDeviceGroups
+      tags: [device-group]
+      parameters:
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 可访问设备组列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessibleGroupPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/device-groups:
+    get:
+      summary: 设备组列表（AdminGuard 语义）
+      description: name LIKE 过滤；name ASC 排序。
+      operationId: listDeviceGroups
+      tags: [device-group]
+      parameters:
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/CurrentParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: 设备组分页
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceGroupPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: 创建设备组（AdminGuard 语义）
+      description: 重名 400（Device group name already exists；注意角色/用户组为 409）。
+      operationId: createDeviceGroup
+      tags: [device-group]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceGroupUpsertRequest"
+      responses:
+        "200":
+          description: 创建后的设备组
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceGroupView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/device-groups/strategy-targets:
+    get:
+      summary: 策略指派的设备组候选（strategies.assign；scope 过滤）
+      description: scoped 操作者仅见授权组；guid ASC 排序。
+      operationId: deviceGroupStrategyTargets
+      tags: [device-group]
+      parameters:
+        - $ref: "#/components/parameters/CurrentParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: 设备组候选分页
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceGroupTargetPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/device-groups/{guid}:
+    patch:
+      summary: 更新设备组（AdminGuard 语义）
+      description: 重名 400；不存在 404 Device group does not exist。
+      operationId: updateDeviceGroup
+      tags: [device-group]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceGroupUpsertRequest"
+      responses:
+        "200":
+          description: 更新后的设备组
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceGroupView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: 删除设备组（AdminGuard 语义）
+      description: >-
+        被 user_role_assignment_device_groups 引用时 400
+        （RESTRICT 语义由应用层计数检查实现）。
+      operationId: deleteDeviceGroup
+      tags: [device-group]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 删除成功（空对象）
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: 批量加入设备（AdminGuard 语义；body 为 peer.id 数字 ID 数组）
+      description: 按 peers.id（数字设备 ID 字符串）匹配；返回实际加入数。
+      operationId: addDeviceGroupDevices
+      tags: [device-group]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+              minItems: 1
+      responses:
+        "200":
+          description: 加入结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AddDevicesResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/device-groups/{guid}/devices:
+    delete:
+      summary: 批量移出设备（AdminGuard 语义；body 为 peer.id 数字 ID 数组）
+      description: 按 peers.id（数字设备 ID 字符串）匹配；返回实际移出数。
+      operationId: removeDeviceGroupDevices
+      tags: [device-group]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+              minItems: 1
+      responses:
+        "200":
+          description: 移出结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoveDevicesResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  # ==================== M2 策略域 ====================
+  /api/strategies:
+    get:
+      summary: 策略列表（strategies.view）
+      description: name LIKE 过滤；name ASC、guid ASC 决胜排序。
+      operationId: listStrategies
+      tags: [strategy]
+      parameters:
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/CurrentParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: 策略分页
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StrategyPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: 创建策略（strategies.create）
+      description: 重名 400（Strategy name already exists）；config_options 未传存空串。
+      operationId: createStrategy
+      tags: [strategy]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StrategyUpsertRequest"
+      responses:
+        "200":
+          description: 创建后的策略
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StrategyView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/strategies/candidates:
+    get:
+      summary: 策略候选（strategies.assign；指派界面下拉）
+      description: name ASC 排序。
+      operationId: strategyCandidates
+      tags: [strategy]
+      parameters:
+        - $ref: "#/components/parameters/CurrentParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: 策略候选分页
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StrategyCandidatePage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/strategies/target-candidates:
+    get:
+      summary: 指派目标候选（strategies.assign；target_type 两形态）
+      description: >-
+        target_type=device → {uuid,id}[]（scope 过滤）；
+        target_type=user → {guid,name,is_protected}[]（要求 global scope，
+        非管理员只见非管理员用户）。
+      operationId: strategyTargetCandidates
+      tags: [strategy]
+      parameters:
+        - name: target_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [device, user]
+        - $ref: "#/components/parameters/CurrentParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: 目标候选分页（device/user 两形态之一）
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/DeviceTargetPage"
+                  - $ref: "#/components/schemas/UserTargetPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/strategies/{guid}:
+    get:
+      summary: 策略详情（strategies.view）
+      description: 含解析后的 config_options（空串解析为 {}）。
+      operationId: getStrategy
+      tags: [strategy]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 策略视图
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StrategyView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      summary: 更新策略（strategies.edit）
+      description: 重名 400；config_options 提供即覆盖。
+      operationId: updateStrategy
+      tags: [strategy]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StrategyUpsertRequest"
+      responses:
+        "200":
+          description: 更新后的策略
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StrategyView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: 删除策略（strategies.delete）
+      description: 服务层事务显式置空 peers/users/device_groups 三处 strategyGuid 引用。
+      operationId: deleteStrategy
+      tags: [strategy]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 删除成功（空对象）
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/strategies/{guid}/assignments:
+    get:
+      summary: 策略当前指派目标（strategies.assign；target_type 必填）
+      description: >-
+        target_type=device → {uuid,id}[]（scope 过滤）；target_type=user →
+        {guid,name,is_protected}[]；target_type=device_group → {guid,name}[]
+        按 name ASC。
+      operationId: strategyAssignments
+      tags: [strategy]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: target_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [device, user, device_group]
+        - $ref: "#/components/parameters/CurrentParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: 指派目标分页（三形态之一）
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/DeviceTargetPage"
+                  - $ref: "#/components/schemas/UserTargetPage"
+                  - $ref: "#/components/schemas/DeviceGroupTargetPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/strategies/{guid}/assign:
+    post:
+      summary: 指派策略（strategies.assign；直写宿主表 FK）
+      description: >-
+        assign 语义 = 直接回写 peers/users/device_groups 的 strategyGuid 列。
+        target_type=user 必须 global scope；保护账号目标需 super administrator。
+        响应 {success:[], errors:[{target_guid, reason}]}；
+        reason：Device not found / User does not exist / Device group not found。
+      operationId: assignStrategy
+      tags: [strategy]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRequest"
+      responses:
+        "200":
+          description: 指派结果（部分成功亦 200）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/strategies/{guid}/unassign:
+    post:
+      summary: 解绑策略（strategies.assign；解绑 = 置 NULL）
+      description: >-
+        额外校验目标当前确已绑定该策略（Device is not bound to this strategy 等），
+        解绑即置空宿主 FK。
+      operationId: unassignStrategy
+      tags: [strategy]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRequest"
+      responses:
+        "200":
+          description: 解绑结果（部分成功亦 200）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  # ==================== M2 RBAC 域 ====================
+  /api/permissions:
+    get:
+      summary: 权限目录只读（roles.view；{data:[...]} 无 total）
+      description: 35+ 码编译期目录序列化，杜绝漂移；roles.create/edit/delete
+        为 system_only（assignable=false）。
+      operationId: listPermissions
+      tags: [rbac]
+      responses:
+        "200":
+          description: 权限目录
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PermissionDefinition"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/permissions/me:
+    get:
+      summary: 当前用户生效权限（JWT；{permissions, scopes} 无 total）
+      description: >-
+        生效码经依赖过滤；scopes 形态：
+        {global: [code...], device_group: {<guid>: [code...]}}。
+      operationId: myPermissions
+      tags: [rbac]
+      responses:
+        "200":
+          description: 生效权限与 scope 映射
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EffectivePermissions"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/roles:
+    get:
+      summary: 角色列表（roles.view）
+      description: name/note LIKE 过滤；name ASC、guid ASC 决胜排序。
+      operationId: listRoles
+      tags: [rbac]
+      parameters:
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: note
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/CurrentParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: 角色分页
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RolePage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: 创建角色（super administrator）
+      description: >-
+        重名 409（Role name already exists）；system_only 码写入 400
+        （Permission code cannot be assigned: ...）；requires 依赖缺失 400
+        （Missing permission dependencies: ...）；事务内显式审计。
+      operationId: createRole
+      tags: [rbac]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleCreateRequest"
+      responses:
+        "200":
+          description: 创建后的角色
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/roles/{guid}:
+    get:
+      summary: 角色详情（roles.view；guid 需 uuid v4，否则 400）
+      description: 含权限码清单。
+      operationId: getRole
+      tags: [rbac]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 角色详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      summary: 更新角色（super administrator）
+      description: >-
+        重名 409；取消保护（protected_account true→false）需
+        confirm_protected_account_change=true，否则 400；
+        system_only/requires 校验同创建；事务内显式审计。
+      operationId: updateRole
+      tags: [rbac]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleUpdateRequest"
+      responses:
+        "200":
+          description: 更新后的角色
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: 删除角色（super administrator）
+      description: >-
+        事务级联删 role_permissions/user_role_assignments/
+        user_role_assignment_device_groups；删除前 beforeState 全量快照审计。
+      operationId: deleteRole
+      tags: [rbac]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 删除成功（空对象）
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/roles/{guid}/protection-impact:
+    get:
+      summary: 保护角色变更影响面（super administrator；{affected_member_count} 无 total）
+      description: 统计挂在该角色上的用户数。
+      operationId: roleProtectionImpact
+      tags: [rbac]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 影响面
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProtectionImpact"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/users/{guid}/roles:
+    get:
+      summary: 用户角色指派列表（roles.assign；{data, effective_scope} 无 total）
+      description: data 为 assignment 列表（createdAt ASC）；effective_scope 为
+        聚合 scope（global | device_group | none）。
+      operationId: getUserRoles
+      tags: [rbac]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 用户角色与聚合 scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserRolesResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      summary: 全量替换用户角色指派（roles.assign；越权防护链）
+      description: >-
+        防护：自改角色 403（You cannot modify your own roles）；目标为保护账号
+        需 super administrator（403）；给超管派非保护角色 403
+        （Super administrators cannot be assigned regular roles）；
+        device_group scope 仅限 device 档码（400）；device_group scope 须带 ≥1 组、
+        global scope 不得带组（400）；非超管的组范围须在自己授权集内
+        （403 Target device group is outside the authorized scope）。
+      operationId: replaceUserRoles
+      tags: [rbac]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceRolesRequest"
+      responses:
+        "200":
+          description: 替换后的 {data, effective_scope}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserRolesResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/users/{guid}/roles/eligibility:
+    get:
+      summary: 角色指派资格矩阵（roles.assign；{data:[...]} 无 total）
+      description: >-
+        每个角色一行：eligible 与 reason_code（eligible / self_target /
+        target_protected / protected_role / super_admin_target）。
+      operationId: userRoleEligibility
+      tags: [rbac]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 资格矩阵
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/EligibilityRow"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  # ==================== M2 用户组域 ====================
+  /api/user-groups:
+    get:
+      summary: 用户组列表（user_groups.view；user_count 计数）
+      description: normalizedName ASC、guid ASC 决胜排序。
+      operationId: listUserGroups
+      tags: [user-group]
+      parameters:
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/CurrentParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: 用户组分页
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserGroupPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: 创建用户组（user_groups.create）
+      description: 重名 409（User group name already exists）。
+      operationId: createUserGroup
+      tags: [user-group]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserGroupUpsertRequest"
+      responses:
+        "200":
+          description: 创建后的用户组
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserGroupView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/user-groups/{guid}:
+    put:
+      summary: 更新用户组（user_groups.edit）
+      description: 重名 409；不存在 404 User group does not exist。
+      operationId: updateUserGroup
+      tags: [user-group]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserGroupUpsertRequest"
+      responses:
+        "200":
+          description: 更新后的用户组
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserGroupView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: 删除用户组（user_groups.delete；默认组禁删）
+      description: >-
+        删除默认组 400；删除时成员回落默认组（moved_user_count），
+        deleted_rule_count M2 恒 0（address_book_rules 属 M3）。
+      operationId: deleteUserGroup
+      tags: [user-group]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 删除结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteUserGroupResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/user-groups/{guid}/users:
+    get:
+      summary: 用户组成员列表（user_groups.view；search 匹配 username/email）
+      description: 分页；username/display_name/email 展示。
+      operationId: listUserGroupMembers
+      tags: [user-group]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: search
+          in: query
+          required: false
+          description: LIKE 匹配 username 或 email
+          schema:
+            type: string
+        - $ref: "#/components/parameters/CurrentParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: 成员分页
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: 移动用户到组（user_groups.membership；body {user_guids[]}）
+      description: 经 AssertUsersMutation 复核；响应 moved_user_count。
+      operationId: addUserGroupMembers
+      tags: [user-group]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveUsersRequest"
+      responses:
+        "200":
+          description: 移动结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MoveUsersResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
 components:
+  parameters:
+    CurrentParam:
+      name: current
+      in: query
+      required: false
+      description: 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100000
+        default: 1
+    PageSizeParam:
+      name: pageSize
+      in: query
+      required: false
+      description: 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
   securitySchemes:
     bearerAuth:
       type: http
@@ -934,6 +2437,797 @@ components:
         avatar:
           type: string
 
+    # ==================== M2 schemas ====================
+    HeartbeatRequest:
+      type: object
+      additionalProperties: false
+      required: [id, uuid, ver, modified_at]
+      properties:
+        id:
+          type: string
+          description: RustDesk 数字设备 ID（如 "123456789"）
+        uuid:
+          type: string
+          description: 设备 UUID（peers 主键）
+        ver:
+          type: integer
+          description: 客户端整版本号（格式化规则见 info.version）
+        modified_at:
+          type: integer
+          format: int64
+          description: 客户端策略版本戳（毫秒 epoch）
+        conns:
+          type: array
+          items:
+            type: integer
+          description: 当前活跃连接 ID；键缺失 ≠ 空（指针判空区分）
+
+    HeartbeatResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        disconnect:
+          type: array
+          items:
+            type: integer
+          description: 待断连 connId 列表（客户端确认语义）
+        strategy:
+          type: object
+          required: [config_options]
+          properties:
+            config_options:
+              type: object
+              additionalProperties:
+                type: string
+        modified_at:
+          type: integer
+          format: int64
+          description: 下发用策略 updatedAt（毫秒）
+
+    SysinfoRequest:
+      type: object
+      additionalProperties: false
+      required: [uuid]
+      properties:
+        uuid:
+          type: string
+        id:
+          type: string
+        hostname:
+          type: string
+        username:
+          type: string
+        os:
+          type: string
+        cpu:
+          type: string
+        memory:
+          type: string
+        version:
+          type: string
+        preset-address-book-name:
+          type: string
+          description: M2 接受不处理（M3 通讯录联动）
+        preset-address-book-tag:
+          type: string
+        preset-address-book-alias:
+          type: string
+        preset-address-book-password:
+          type: string
+        preset-address-book-note:
+          type: string
+        preset-username:
+          type: string
+          description: 非空真值才覆盖 sysinfos.preset_username
+        preset-strategy-name:
+          type: string
+        preset-device-group-name:
+          type: string
+          description: 按名关联 device_groups 并回写 peers.deviceGroupGuid
+        preset-note:
+          type: string
+          description: 仅当 peers.note 为空时写入
+
+    PeerInfo:
+      type: object
+      required: [device_name, username, os, version, cpu, memory, ip]
+      properties:
+        device_name:
+          type: string
+          description: sysinfos.hostname
+        username:
+          type: string
+          description: sysinfos.username
+        os:
+          type: string
+        version:
+          type: string
+          description: ver 格式化结果（ver=0 → 空串）
+        cpu:
+          type: string
+        memory:
+          type: string
+        ip:
+          type: string
+          description: 恒为空串
+
+    PeerView:
+      type: object
+      required: [id, guid, status, is_online, last_online, user, user_name, note, device_group_name, strategy_name, info]
+      properties:
+        id:
+          type: string
+          description: peer.id（数字设备 ID 字符串）
+        guid:
+          type: string
+          description: = peer.uuid
+        status:
+          type: integer
+          description: 1=正常 / 0=停用
+        is_online:
+          type: boolean
+          description: lastHeartbeat > now-60s（60 秒阈值硬编码）
+        last_online:
+          type: string
+          format: date-time
+          nullable: true
+        user:
+          type: string
+          description: = userGuid 或空串
+        user_name:
+          type: string
+        note:
+          type: string
+        device_group_name:
+          type: string
+        strategy_name:
+          type: string
+        info:
+          $ref: "#/components/schemas/PeerInfo"
+
+    DeviceView:
+      allOf:
+        - $ref: "#/components/schemas/PeerView"
+        - type: object
+          required: [userGuid, deviceGroupGuid]
+          properties:
+            userGuid:
+              type: string
+              nullable: true
+            deviceGroupGuid:
+              type: string
+              nullable: true
+
+    PeerPage:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PeerView"
+        total:
+          type: integer
+
+    DevicePage:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeviceView"
+        total:
+          type: integer
+
+    DeviceStatusUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [guids, status]
+      properties:
+        guids:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          description: peer.uuid 数组
+        status:
+          type: string
+          enum: [enabled, disabled]
+
+    DeviceStatusUpdateResult:
+      type: object
+      required: [succeeded, failed, total, succeededCount, failedCount]
+      properties:
+        succeeded:
+          type: array
+          items:
+            type: string
+        failed:
+          type: array
+          items:
+            type: string
+        total:
+          type: integer
+        succeededCount:
+          type: integer
+        failedCount:
+          type: integer
+
+    UpdateDeviceRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        note:
+          type: string
+        userName:
+          type: string
+          nullable: true
+          description: 关联变更需 super administrator；空串解绑
+        deviceGroupName:
+          type: string
+          nullable: true
+          description: 关联变更需 super administrator；空串解绑
+        strategyName:
+          type: string
+          nullable: true
+          description: 关联变更需 super administrator；空串解绑
+
+    DisconnectRequest:
+      type: object
+      additionalProperties: false
+      required: [connIds]
+      properties:
+        connIds:
+          type: array
+          items:
+            type: integer
+          minItems: 1
+
+    DisconnectResult:
+      type: object
+      required: [pending_disconnect_count]
+      properties:
+        pending_disconnect_count:
+          type: integer
+
+    DeviceGroupView:
+      type: object
+      required: [guid, name, note, strategy_guid, device_count, created_at, updated_at]
+      properties:
+        guid:
+          type: string
+        name:
+          type: string
+        note:
+          type: string
+        strategy_guid:
+          type: string
+          nullable: true
+        device_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    DeviceGroupUpsertRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+        note:
+          type: string
+
+    DeviceGroupPage:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeviceGroupView"
+        total:
+          type: integer
+
+    AccessibleGroupView:
+      type: object
+      required: [guid, name, note]
+      properties:
+        guid:
+          type: string
+        name:
+          type: string
+        note:
+          type: string
+
+    AccessibleGroupPage:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AccessibleGroupView"
+        total:
+          type: integer
+
+    AddDevicesResult:
+      type: object
+      required: [added_count]
+      properties:
+        added_count:
+          type: integer
+
+    RemoveDevicesResult:
+      type: object
+      required: [removed_count]
+      properties:
+        removed_count:
+          type: integer
+
+    StrategyView:
+      type: object
+      required: [guid, name, note, config_options, created_at, updated_at]
+      properties:
+        guid:
+          type: string
+        name:
+          type: string
+        note:
+          type: string
+        config_options:
+          type: object
+          additionalProperties:
+            type: string
+          description: DB TEXT 存 JSON 串，读出解析；空串 → {}
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    StrategyUpsertRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+        note:
+          type: string
+        config_options:
+          type: object
+          additionalProperties:
+            type: string
+
+    StrategyPage:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/StrategyView"
+        total:
+          type: integer
+
+    StrategyCandidateView:
+      type: object
+      required: [guid, name, note]
+      properties:
+        guid:
+          type: string
+        name:
+          type: string
+        note:
+          type: string
+
+    StrategyCandidatePage:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/StrategyCandidateView"
+        total:
+          type: integer
+
+    DeviceTargetView:
+      type: object
+      required: [uuid, id]
+      properties:
+        uuid:
+          type: string
+        id:
+          type: string
+
+    DeviceTargetPage:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeviceTargetView"
+        total:
+          type: integer
+
+    UserTargetView:
+      type: object
+      required: [guid, name, is_protected]
+      properties:
+        guid:
+          type: string
+        name:
+          type: string
+          description: displayName || username
+        is_protected:
+          type: boolean
+
+    UserTargetPage:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserTargetView"
+        total:
+          type: integer
+
+    DeviceGroupTargetView:
+      type: object
+      required: [guid, name]
+      properties:
+        guid:
+          type: string
+        name:
+          type: string
+
+    DeviceGroupTargetPage:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeviceGroupTargetView"
+        total:
+          type: integer
+
+    AssignRequest:
+      type: object
+      additionalProperties: false
+      required: [target_type, target_guids]
+      properties:
+        target_type:
+          type: string
+          enum: [device, user, device_group]
+        target_guids:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          maxItems: 200
+
+    AssignError:
+      type: object
+      required: [target_guid, reason]
+      properties:
+        target_guid:
+          type: string
+        reason:
+          type: string
+
+    AssignResult:
+      type: object
+      required: [success, errors]
+      properties:
+        success:
+          type: array
+          items:
+            type: string
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssignError"
+
+    PermissionDefinition:
+      type: object
+      required: [code, resource, action, name, scope, assignable, system_only, requires]
+      properties:
+        code:
+          type: string
+        resource:
+          type: string
+        action:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        scope:
+          type: string
+          enum: [global, device_group]
+        assignable:
+          type: boolean
+        system_only:
+          type: boolean
+        requires:
+          type: array
+          items:
+            type: string
+
+    EffectivePermissions:
+      type: object
+      required: [permissions, scopes]
+      properties:
+        permissions:
+          type: array
+          items:
+            type: string
+          description: 生效码（依赖过滤后）
+        scopes:
+          type: object
+          required: [global, device_group]
+          properties:
+            global:
+              type: array
+              items:
+                type: string
+            device_group:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+              description: "<设备组guid>: [生效码...]"
+
+    RoleView:
+      type: object
+      required: [guid, name, note, protected_account, created_at, updated_at]
+      properties:
+        guid:
+          type: string
+        name:
+          type: string
+        note:
+          type: string
+        protected_account:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    RoleDetail:
+      allOf:
+        - $ref: "#/components/schemas/RoleView"
+        - type: object
+          required: [permissions]
+          properties:
+            permissions:
+              type: array
+              items:
+                type: string
+
+    RoleCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+        note:
+          type: string
+        protected_account:
+          type: boolean
+        permissions:
+          type: array
+          items:
+            type: string
+
+    RoleUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        note:
+          type: string
+        protected_account:
+          type: boolean
+        permissions:
+          type: array
+          items:
+            type: string
+        confirm_protected_account_change:
+          type: boolean
+          description: 取消保护（true→false）必须为 true
+
+    RolePage:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoleView"
+        total:
+          type: integer
+
+    ProtectionImpact:
+      type: object
+      required: [affected_member_count]
+      properties:
+        affected_member_count:
+          type: integer
+
+    AssignmentDto:
+      type: object
+      required: [role_guid, role_name, scope_type, device_group_guids]
+      properties:
+        role_guid:
+          type: string
+        role_name:
+          type: string
+        scope_type:
+          type: string
+          enum: [global, device_group]
+        device_group_guids:
+          type: array
+          items:
+            type: string
+
+    UserRolesResult:
+      type: object
+      required: [data, effective_scope]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssignmentDto"
+        effective_scope:
+          type: string
+          enum: [global, device_group, none]
+          description: 用户全部 assignment 聚合 scope
+
+    ReplaceRolesRequest:
+      type: object
+      additionalProperties: false
+      required: [assignments]
+      properties:
+        assignments:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [role_guid, scope_type]
+            properties:
+              role_guid:
+                type: string
+              scope_type:
+                type: string
+                enum: [global, device_group]
+              device_group_guids:
+                type: array
+                items:
+                  type: string
+
+    EligibilityRow:
+      type: object
+      required: [role_guid, role_name, protected_account, eligible, reason_code]
+      properties:
+        role_guid:
+          type: string
+        role_name:
+          type: string
+        protected_account:
+          type: boolean
+        eligible:
+          type: boolean
+        reason_code:
+          type: string
+          enum: [eligible, self_target, target_protected, protected_role, super_admin_target]
+
+    UserGroupView:
+      type: object
+      required: [guid, name, note, is_default, user_count]
+      properties:
+        guid:
+          type: string
+        name:
+          type: string
+        note:
+          type: string
+        is_default:
+          type: boolean
+        user_count:
+          type: integer
+
+    UserGroupUpsertRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+        note:
+          type: string
+
+    UserGroupPage:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserGroupView"
+        total:
+          type: integer
+
+    MemberView:
+      type: object
+      required: [guid, username, display_name, email]
+      properties:
+        guid:
+          type: string
+        username:
+          type: string
+        display_name:
+          type: string
+        email:
+          type: string
+
+    MemberPage:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberView"
+        total:
+          type: integer
+
+    MoveUsersRequest:
+      type: object
+      additionalProperties: false
+      required: [user_guids]
+      properties:
+        user_guids:
+          type: array
+          items:
+            type: string
+          minItems: 1
+
+    MoveUsersResult:
+      type: object
+      required: [moved_user_count]
+      properties:
+        moved_user_count:
+          type: integer
+
+    DeleteUserGroupResult:
+      type: object
+      required: [moved_user_count, deleted_rule_count]
+      properties:
+        moved_user_count:
+          type: integer
+          description: 回落默认组的成员数
+        deleted_rule_count:
+          type: integer
+          description: M2 恒 0（address_book_rules 属 M3）
+
     Error:
       type: object
       description: NestJS 默认错误包络；message 为对象/字符串/字符串数组三种形态之一。
@@ -972,6 +3266,18 @@ components:
             $ref: "#/components/schemas/Error"
     Error:
       description: 错误包络
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: 权限不足（RBAC scope / AdminGuard / super administrator）
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: 名称冲突（角色/用户组 409；设备组/策略为 400）
       content:
         application/json:
           schema:

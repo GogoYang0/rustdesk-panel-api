@@ -25,6 +25,15 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// WriteText 纯文本成功出口（M2 设备端协议 sysinfo 专用）：
+// Content-Type: text/plain; charset=utf-8，恒按调用方状态码写出
+// （sysinfo 语义恒 200）。
+func WriteText(w http.ResponseWriter, status int, text string) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(text))
+}
+
 // Fail 通用错误出口：message 原样透出（string / []string / map）。
 func Fail(w http.ResponseWriter, status int, message any) {
 	writeEnvelope(w, status, message)

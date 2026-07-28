@@ -10,6 +10,7 @@ import (
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/config"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/httpx"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/middleware"
+	"github.com/rustdesk-panel/rustdesk-panel-api/internal/rbac"
 )
 
 // Router 装配路由表与横切链。
@@ -19,11 +20,13 @@ import (
 // 即整链顺序与设计一致。public=true 的路由不包 JWTAuth
 // （等效于公开白名单跳过），白名单数据源即注册声明本身。
 type Router struct {
-	mux       *http.ServeMux
-	limiter   *middleware.RateLimiter
-	validator middleware.TokenValidator
-	handler   http.Handler
-	domain    *Domain
+	mux           *http.ServeMux
+	limiter       *middleware.RateLimiter
+	deviceLimiter *middleware.DeviceRateLimiter
+	validator     middleware.TokenValidator
+	rbacMW        *rbac.Middleware
+	handler       http.Handler
+	domain        *Domain
 }
 
 // RouterDeps 路由装配依赖。
@@ -43,9 +46,10 @@ type RouterDeps struct {
 // NewRouter 构建路由器：系统端点 + （注入 DB 时）认证域路由。
 func NewRouter(deps RouterDeps) *Router {
 	rt := &Router{
-		mux:       http.NewServeMux(),
-		limiter:   middleware.NewRateLimiter(deps.RateLimitEnabled),
-		validator: deps.Validator,
+		mux:           http.NewServeMux(),
+		limiter:       middleware.NewRateLimiter(deps.RateLimitEnabled),
+		deviceLimiter: middleware.NewDeviceRateLimiter(deps.RateLimitEnabled),
+		validator:     deps.Validator,
 	}
 	rt.registerSystem()
 	if deps.DB != nil {
@@ -58,6 +62,7 @@ func NewRouter(deps RouterDeps) *Router {
 		if rt.validator == nil {
 			rt.validator = domain.Tokens
 		}
+		rt.rbacMW = domain.RbacMW
 		rt.registerDomainRoutes(domain)
 	}
 	rt.handler = middleware.Chain(rt.mux,
@@ -95,6 +100,41 @@ func (rt *Router) Handle(method, pattern string, public bool, perMinute int, h h
 // hf 将方法转 handler（注册侧简化书写）。
 func hf(h func(http.ResponseWriter, *http.Request)) http.Handler {
 	return http.HandlerFunc(h)
+}
+
+// HandlePolicy 注册一条带授权策略的路由（M2，设计 §1.3）。
+//
+//	method   HTTP 方法
+//	pattern  路径模板（{param} 段），与 openapi paths 一一对应
+//	policy   授权策略（Public 跳过 JWT；Auth 仅 JWT；
+//	         Perm/AdminGuard/SuperAdmin 在 JWT 后执行查库决策）
+//	perMinute>0 时启用 per-IP per-route 限流（次/分钟）
+func (rt *Router) HandlePolicy(method, pattern string, policy rbac.Policy, perMinute int, h http.Handler) {
+	if perMinute > 0 {
+		h = rt.limiter.Wrap(pattern, perMinute, h)
+	}
+	if policy.Kind != rbac.PolicyPublic {
+		h = middleware.JWTAuth(rt.validator)(h)
+	}
+	if rt.rbacMW == nil {
+		// 未装配 Domain 即注册策略路由属编程错误，启动期快速失败。
+		panic("server: HandlePolicy requires rbac middleware (assemble Domain first)")
+	}
+	switch policy.Kind {
+	case rbac.PolicyPerm:
+		h = rt.rbacMW.RequirePermission(policy.Code)(h)
+	case rbac.PolicyAdminGuard:
+		h = rt.rbacMW.RequireAdminGuard()(h)
+	case rbac.PolicySuperAdmin:
+		h = rt.rbacMW.RequireSuperAdmin()(h)
+	}
+	rt.mux.Handle(method+" "+pattern, h)
+}
+
+// DeviceRateLimit 包装设备维度限流（heartbeat/sysinfo 专用，tracker=
+// body.id → body.uuid → IP），供注册处以显式组合方式前置到公开端点。
+func (rt *Router) DeviceRateLimit(pattern string, perMinute int, h http.Handler) http.Handler {
+	return rt.deviceLimiter.Wrap(pattern, perMinute, h)
 }
 
 // registerSystem 注册系统端点（M0 契约保持不变）。

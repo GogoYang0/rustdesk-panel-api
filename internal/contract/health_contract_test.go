@@ -6,20 +6,19 @@ import (
 	"testing"
 )
 
-// TestSpecLoadsAndCounts 验证 spec 可加载、可校验且 path/操作数与 M1 范围一致。
-// /api/users/me/avatar 一条 path 承载 POST+DELETE 两个操作。
+// TestSpecLoadsAndCounts 验证 spec 可加载、可校验且 path/操作数与
+// M1+M2 范围一致：M1 25 操作 + M2 43 操作 = 68；53 个 path key。
 func TestSpecLoadsAndCounts(t *testing.T) {
 	doc := loadSpec(t)
-	// 24 个 path key（avatar POST/DELETE 合并），25 个操作 = healthz + §2.1 全部端点。
-	if got := doc.Paths.Len(); got != 24 {
-		t.Fatalf("openapi paths = %d, want 24", got)
+	if got := doc.Paths.Len(); got != 53 {
+		t.Fatalf("openapi paths = %d, want 53", got)
 	}
 	ops := 0
 	for _, item := range doc.Paths.Map() {
 		ops += len(item.Operations())
 	}
-	if ops != 25 {
-		t.Fatalf("openapi operations = %d, want 25", ops)
+	if ops != 68 {
+		t.Fatalf("openapi operations = %d, want 68", ops)
 	}
 	for _, p := range []string{
 		"/api/healthz", "/api/login", "/api/login-options", "/api/logout",
@@ -31,6 +30,18 @@ func TestSpecLoadsAndCounts(t *testing.T) {
 		"/api/oidc/auth", "/api/oidc/auth-query", "/api/oidc/callback",
 		"/api/users/me", "/api/users/me/password", "/api/users/me/avatar",
 		"/api/avatars/{filename}",
+		// M2 路径抽查（域级覆盖见 m2 契约测试）。
+		"/api/heartbeat", "/api/sysinfo", "/api/peers", "/api/devices",
+		"/api/devices/status", "/api/devices/{guid}", "/api/devices/{uuid}/disconnect",
+		"/api/device-group/accessible", "/api/device-groups", "/api/device-groups/strategy-targets",
+		"/api/device-groups/{guid}", "/api/device-groups/{guid}/devices",
+		"/api/strategies", "/api/strategies/candidates", "/api/strategies/target-candidates",
+		"/api/strategies/{guid}", "/api/strategies/{guid}/assignments",
+		"/api/strategies/{guid}/assign", "/api/strategies/{guid}/unassign",
+		"/api/permissions", "/api/permissions/me", "/api/roles", "/api/roles/{guid}",
+		"/api/roles/{guid}/protection-impact", "/api/users/{guid}/roles",
+		"/api/users/{guid}/roles/eligibility", "/api/user-groups",
+		"/api/user-groups/{guid}", "/api/user-groups/{guid}/users",
 	} {
 		if doc.Paths.Find(p) == nil {
 			t.Errorf("path %s missing in spec", p)
