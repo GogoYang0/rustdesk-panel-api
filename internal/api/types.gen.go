@@ -16,6 +16,34 @@ const (
 	CookieAuthScopes = "cookieAuth.Scopes"
 )
 
+// Defines values for AssignRequestTargetType.
+const (
+	AssignRequestTargetTypeDevice      AssignRequestTargetType = "device"
+	AssignRequestTargetTypeDeviceGroup AssignRequestTargetType = "device_group"
+	AssignRequestTargetTypeUser        AssignRequestTargetType = "user"
+)
+
+// Defines values for AssignmentDtoScopeType.
+const (
+	AssignmentDtoScopeTypeDeviceGroup AssignmentDtoScopeType = "device_group"
+	AssignmentDtoScopeTypeGlobal      AssignmentDtoScopeType = "global"
+)
+
+// Defines values for DeviceStatusUpdateRequestStatus.
+const (
+	Disabled DeviceStatusUpdateRequestStatus = "disabled"
+	Enabled  DeviceStatusUpdateRequestStatus = "enabled"
+)
+
+// Defines values for EligibilityRowReasonCode.
+const (
+	Eligible         EligibilityRowReasonCode = "eligible"
+	ProtectedRole    EligibilityRowReasonCode = "protected_role"
+	SelfTarget       EligibilityRowReasonCode = "self_target"
+	SuperAdminTarget EligibilityRowReasonCode = "super_admin_target"
+	TargetProtected  EligibilityRowReasonCode = "target_protected"
+)
+
 // Defines values for LoginRequestType.
 const (
 	LoginRequestTypeAccount   LoginRequestType = "account"
@@ -36,6 +64,112 @@ const (
 	LoginResponseTypeEmailCheck LoginResponseType = "email_check"
 )
 
+// Defines values for PermissionDefinitionScope.
+const (
+	PermissionDefinitionScopeDeviceGroup PermissionDefinitionScope = "device_group"
+	PermissionDefinitionScopeGlobal      PermissionDefinitionScope = "global"
+)
+
+// Defines values for ReplaceRolesRequestAssignmentsScopeType.
+const (
+	ReplaceRolesRequestAssignmentsScopeTypeDeviceGroup ReplaceRolesRequestAssignmentsScopeType = "device_group"
+	ReplaceRolesRequestAssignmentsScopeTypeGlobal      ReplaceRolesRequestAssignmentsScopeType = "global"
+)
+
+// Defines values for UserRolesResultEffectiveScope.
+const (
+	UserRolesResultEffectiveScopeDeviceGroup UserRolesResultEffectiveScope = "device_group"
+	UserRolesResultEffectiveScopeGlobal      UserRolesResultEffectiveScope = "global"
+	UserRolesResultEffectiveScopeNone        UserRolesResultEffectiveScope = "none"
+)
+
+// Defines values for ListDevicesParamsStatus.
+const (
+	ListDevicesParamsStatusN0 ListDevicesParamsStatus = "0"
+	ListDevicesParamsStatusN1 ListDevicesParamsStatus = "1"
+)
+
+// Defines values for ListDevicesParamsIsOnline.
+const (
+	ListDevicesParamsIsOnlineN0 ListDevicesParamsIsOnline = "0"
+	ListDevicesParamsIsOnlineN1 ListDevicesParamsIsOnline = "1"
+)
+
+// Defines values for ListPeersParamsStatus.
+const (
+	ListPeersParamsStatusN0 ListPeersParamsStatus = "0"
+	ListPeersParamsStatusN1 ListPeersParamsStatus = "1"
+)
+
+// Defines values for ListPeersParamsIsOnline.
+const (
+	ListPeersParamsIsOnlineN0 ListPeersParamsIsOnline = "0"
+	ListPeersParamsIsOnlineN1 ListPeersParamsIsOnline = "1"
+)
+
+// Defines values for StrategyTargetCandidatesParamsTargetType.
+const (
+	Device StrategyTargetCandidatesParamsTargetType = "device"
+	User   StrategyTargetCandidatesParamsTargetType = "user"
+)
+
+// Defines values for StrategyAssignmentsParamsTargetType.
+const (
+	StrategyAssignmentsParamsTargetTypeDevice      StrategyAssignmentsParamsTargetType = "device"
+	StrategyAssignmentsParamsTargetTypeDeviceGroup StrategyAssignmentsParamsTargetType = "device_group"
+	StrategyAssignmentsParamsTargetTypeUser        StrategyAssignmentsParamsTargetType = "user"
+)
+
+// AccessibleGroupPage defines model for AccessibleGroupPage.
+type AccessibleGroupPage struct {
+	Data  []AccessibleGroupView `json:"data"`
+	Total int                   `json:"total"`
+}
+
+// AccessibleGroupView defines model for AccessibleGroupView.
+type AccessibleGroupView struct {
+	Guid string `json:"guid"`
+	Name string `json:"name"`
+	Note string `json:"note"`
+}
+
+// AddDevicesResult defines model for AddDevicesResult.
+type AddDevicesResult struct {
+	AddedCount int `json:"added_count"`
+}
+
+// AssignError defines model for AssignError.
+type AssignError struct {
+	Reason     string `json:"reason"`
+	TargetGuid string `json:"target_guid"`
+}
+
+// AssignRequest defines model for AssignRequest.
+type AssignRequest struct {
+	TargetGuids []string                `json:"target_guids"`
+	TargetType  AssignRequestTargetType `json:"target_type"`
+}
+
+// AssignRequestTargetType defines model for AssignRequest.TargetType.
+type AssignRequestTargetType string
+
+// AssignResult defines model for AssignResult.
+type AssignResult struct {
+	Errors  []AssignError `json:"errors"`
+	Success []string      `json:"success"`
+}
+
+// AssignmentDto defines model for AssignmentDto.
+type AssignmentDto struct {
+	DeviceGroupGuids []string               `json:"device_group_guids"`
+	RoleGuid         string                 `json:"role_guid"`
+	RoleName         string                 `json:"role_name"`
+	ScopeType        AssignmentDtoScopeType `json:"scope_type"`
+}
+
+// AssignmentDtoScopeType defines model for AssignmentDto.ScopeType.
+type AssignmentDtoScopeType string
+
 // AvatarResponse defines model for AvatarResponse.
 type AvatarResponse struct {
 	Avatar string `json:"avatar"`
@@ -47,12 +181,153 @@ type ChangePasswordRequest struct {
 	NewPassword     string `json:"new_password"`
 }
 
+// DeleteUserGroupResult defines model for DeleteUserGroupResult.
+type DeleteUserGroupResult struct {
+	// DeletedRuleCount M2 恒 0（address_book_rules 属 M3）
+	DeletedRuleCount int `json:"deleted_rule_count"`
+
+	// MovedUserCount 回落默认组的成员数
+	MovedUserCount int `json:"moved_user_count"`
+}
+
+// DeviceGroupPage defines model for DeviceGroupPage.
+type DeviceGroupPage struct {
+	Data  []DeviceGroupView `json:"data"`
+	Total int               `json:"total"`
+}
+
+// DeviceGroupTargetPage defines model for DeviceGroupTargetPage.
+type DeviceGroupTargetPage struct {
+	Data  []DeviceGroupTargetView `json:"data"`
+	Total int                     `json:"total"`
+}
+
+// DeviceGroupTargetView defines model for DeviceGroupTargetView.
+type DeviceGroupTargetView struct {
+	Guid string `json:"guid"`
+	Name string `json:"name"`
+}
+
+// DeviceGroupUpsertRequest defines model for DeviceGroupUpsertRequest.
+type DeviceGroupUpsertRequest struct {
+	Name string  `json:"name"`
+	Note *string `json:"note,omitempty"`
+}
+
+// DeviceGroupView defines model for DeviceGroupView.
+type DeviceGroupView struct {
+	CreatedAt    time.Time `json:"created_at"`
+	DeviceCount  int       `json:"device_count"`
+	Guid         string    `json:"guid"`
+	Name         string    `json:"name"`
+	Note         string    `json:"note"`
+	StrategyGuid *string   `json:"strategy_guid"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
 // DeviceInfo defines model for DeviceInfo.
 type DeviceInfo struct {
 	Name *string `json:"name,omitempty"`
 	Os   *string `json:"os,omitempty"`
 	Type *string `json:"type,omitempty"`
 }
+
+// DevicePage defines model for DevicePage.
+type DevicePage struct {
+	Data  []DeviceView `json:"data"`
+	Total int          `json:"total"`
+}
+
+// DeviceStatusUpdateRequest defines model for DeviceStatusUpdateRequest.
+type DeviceStatusUpdateRequest struct {
+	// Guids peer.uuid 数组
+	Guids  []string                        `json:"guids"`
+	Status DeviceStatusUpdateRequestStatus `json:"status"`
+}
+
+// DeviceStatusUpdateRequestStatus defines model for DeviceStatusUpdateRequest.Status.
+type DeviceStatusUpdateRequestStatus string
+
+// DeviceStatusUpdateResult defines model for DeviceStatusUpdateResult.
+type DeviceStatusUpdateResult struct {
+	Failed         []string `json:"failed"`
+	FailedCount    int      `json:"failedCount"`
+	Succeeded      []string `json:"succeeded"`
+	SucceededCount int      `json:"succeededCount"`
+	Total          int      `json:"total"`
+}
+
+// DeviceTargetPage defines model for DeviceTargetPage.
+type DeviceTargetPage struct {
+	Data  []DeviceTargetView `json:"data"`
+	Total int                `json:"total"`
+}
+
+// DeviceTargetView defines model for DeviceTargetView.
+type DeviceTargetView struct {
+	Id   string `json:"id"`
+	Uuid string `json:"uuid"`
+}
+
+// DeviceView defines model for DeviceView.
+type DeviceView struct {
+	DeviceGroupGuid *string `json:"deviceGroupGuid"`
+	DeviceGroupName string  `json:"device_group_name"`
+
+	// Guid = peer.uuid
+	Guid string `json:"guid"`
+
+	// Id peer.id（数字设备 ID 字符串）
+	Id   string   `json:"id"`
+	Info PeerInfo `json:"info"`
+
+	// IsOnline lastHeartbeat > now-60s（60 秒阈值硬编码）
+	IsOnline   bool       `json:"is_online"`
+	LastOnline *time.Time `json:"last_online"`
+	Note       string     `json:"note"`
+
+	// Status 1=正常 / 0=停用
+	Status       int    `json:"status"`
+	StrategyName string `json:"strategy_name"`
+
+	// User = userGuid 或空串
+	User     string  `json:"user"`
+	UserGuid *string `json:"userGuid"`
+	UserName string  `json:"user_name"`
+}
+
+// DisconnectRequest defines model for DisconnectRequest.
+type DisconnectRequest struct {
+	ConnIds []int `json:"connIds"`
+}
+
+// DisconnectResult defines model for DisconnectResult.
+type DisconnectResult struct {
+	PendingDisconnectCount int `json:"pending_disconnect_count"`
+}
+
+// EffectivePermissions defines model for EffectivePermissions.
+type EffectivePermissions struct {
+	// Permissions 生效码（依赖过滤后）
+	Permissions []string `json:"permissions"`
+	Scopes      struct {
+		// DeviceGroup <设备组guid>: [生效码...]
+		DeviceGroup map[string][]string `json:"device_group"`
+		Global      []string            `json:"global"`
+	} `json:"scopes"`
+}
+
+// EligibilityRow defines model for EligibilityRow.
+type EligibilityRow struct {
+	Eligible         bool                     `json:"eligible"`
+	ProtectedAccount bool                     `json:"protected_account"`
+	ReasonCode       EligibilityRowReasonCode `json:"reason_code"`
+	RoleGuid         string                   `json:"role_guid"`
+	RoleName         string                   `json:"role_name"`
+}
+
+// EligibilityRowReasonCode defines model for EligibilityRow.ReasonCode.
+type EligibilityRowReasonCode string
 
 // Error NestJS 默认错误包络；message 为对象/字符串/字符串数组三种形态之一。
 type Error struct {
@@ -73,6 +348,36 @@ type ErrorMessage2 = map[string]interface{}
 // Error_Message defines model for Error.Message.
 type Error_Message struct {
 	union json.RawMessage
+}
+
+// HeartbeatRequest defines model for HeartbeatRequest.
+type HeartbeatRequest struct {
+	// Conns 当前活跃连接 ID；键缺失 ≠ 空（指针判空区分）
+	Conns *[]int `json:"conns,omitempty"`
+
+	// Id RustDesk 数字设备 ID（如 "123456789"）
+	Id string `json:"id"`
+
+	// ModifiedAt 客户端策略版本戳（毫秒 epoch）
+	ModifiedAt int64 `json:"modified_at"`
+
+	// Uuid 设备 UUID（peers 主键）
+	Uuid string `json:"uuid"`
+
+	// Ver 客户端整版本号（格式化规则见 info.version）
+	Ver int `json:"ver"`
+}
+
+// HeartbeatResponse defines model for HeartbeatResponse.
+type HeartbeatResponse struct {
+	// Disconnect 待断连 connId 列表（客户端确认语义）
+	Disconnect *[]int `json:"disconnect,omitempty"`
+
+	// ModifiedAt 下发用策略 updatedAt（毫秒）
+	ModifiedAt *int64 `json:"modified_at,omitempty"`
+	Strategy   *struct {
+		ConfigOptions map[string]string `json:"config_options"`
+	} `json:"strategy,omitempty"`
 }
 
 // LoginRequest type 分支请求；account 需 username/password， tfa_code 需 secret+tfaCode，email_code 需 secret+verificationCode。
@@ -120,9 +425,33 @@ type LogoutRequest struct {
 	Uuid *string `json:"uuid,omitempty"`
 }
 
+// MemberPage defines model for MemberPage.
+type MemberPage struct {
+	Data  []MemberView `json:"data"`
+	Total int          `json:"total"`
+}
+
+// MemberView defines model for MemberView.
+type MemberView struct {
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+	Guid        string `json:"guid"`
+	Username    string `json:"username"`
+}
+
 // MessageResponse defines model for MessageResponse.
 type MessageResponse struct {
 	Message string `json:"message"`
+}
+
+// MoveUsersRequest defines model for MoveUsersRequest.
+type MoveUsersRequest struct {
+	UserGuids []string `json:"user_guids"`
+}
+
+// MoveUsersResult defines model for MoveUsersResult.
+type MoveUsersResult struct {
+	MovedUserCount int `json:"moved_user_count"`
 }
 
 // OidcAuthRequest defines model for OidcAuthRequest.
@@ -143,6 +472,139 @@ type PasskeyView struct {
 	Name       *string    `json:"name,omitempty"`
 }
 
+// PeerInfo defines model for PeerInfo.
+type PeerInfo struct {
+	Cpu string `json:"cpu"`
+
+	// DeviceName sysinfos.hostname
+	DeviceName string `json:"device_name"`
+
+	// Ip 恒为空串
+	Ip     string `json:"ip"`
+	Memory string `json:"memory"`
+	Os     string `json:"os"`
+
+	// Username sysinfos.username
+	Username string `json:"username"`
+
+	// Version ver 格式化结果（ver=0 → 空串）
+	Version string `json:"version"`
+}
+
+// PeerPage defines model for PeerPage.
+type PeerPage struct {
+	Data  []PeerView `json:"data"`
+	Total int        `json:"total"`
+}
+
+// PeerView defines model for PeerView.
+type PeerView struct {
+	DeviceGroupName string `json:"device_group_name"`
+
+	// Guid = peer.uuid
+	Guid string `json:"guid"`
+
+	// Id peer.id（数字设备 ID 字符串）
+	Id   string   `json:"id"`
+	Info PeerInfo `json:"info"`
+
+	// IsOnline lastHeartbeat > now-60s（60 秒阈值硬编码）
+	IsOnline   bool       `json:"is_online"`
+	LastOnline *time.Time `json:"last_online"`
+	Note       string     `json:"note"`
+
+	// Status 1=正常 / 0=停用
+	Status       int    `json:"status"`
+	StrategyName string `json:"strategy_name"`
+
+	// User = userGuid 或空串
+	User     string `json:"user"`
+	UserName string `json:"user_name"`
+}
+
+// PermissionDefinition defines model for PermissionDefinition.
+type PermissionDefinition struct {
+	Action      string                    `json:"action"`
+	Assignable  bool                      `json:"assignable"`
+	Code        string                    `json:"code"`
+	Description *string                   `json:"description,omitempty"`
+	Name        string                    `json:"name"`
+	Requires    []string                  `json:"requires"`
+	Resource    string                    `json:"resource"`
+	Scope       PermissionDefinitionScope `json:"scope"`
+	SystemOnly  bool                      `json:"system_only"`
+}
+
+// PermissionDefinitionScope defines model for PermissionDefinition.Scope.
+type PermissionDefinitionScope string
+
+// ProtectionImpact defines model for ProtectionImpact.
+type ProtectionImpact struct {
+	AffectedMemberCount int `json:"affected_member_count"`
+}
+
+// RemoveDevicesResult defines model for RemoveDevicesResult.
+type RemoveDevicesResult struct {
+	RemovedCount int `json:"removed_count"`
+}
+
+// ReplaceRolesRequest defines model for ReplaceRolesRequest.
+type ReplaceRolesRequest struct {
+	Assignments []struct {
+		DeviceGroupGuids *[]string                               `json:"device_group_guids,omitempty"`
+		RoleGuid         string                                  `json:"role_guid"`
+		ScopeType        ReplaceRolesRequestAssignmentsScopeType `json:"scope_type"`
+	} `json:"assignments"`
+}
+
+// ReplaceRolesRequestAssignmentsScopeType defines model for ReplaceRolesRequest.Assignments.ScopeType.
+type ReplaceRolesRequestAssignmentsScopeType string
+
+// RoleCreateRequest defines model for RoleCreateRequest.
+type RoleCreateRequest struct {
+	Name             string    `json:"name"`
+	Note             *string   `json:"note,omitempty"`
+	Permissions      *[]string `json:"permissions,omitempty"`
+	ProtectedAccount *bool     `json:"protected_account,omitempty"`
+}
+
+// RoleDetail defines model for RoleDetail.
+type RoleDetail struct {
+	CreatedAt        time.Time `json:"created_at"`
+	Guid             string    `json:"guid"`
+	Name             string    `json:"name"`
+	Note             string    `json:"note"`
+	Permissions      []string  `json:"permissions"`
+	ProtectedAccount bool      `json:"protected_account"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// RolePage defines model for RolePage.
+type RolePage struct {
+	Data  []RoleView `json:"data"`
+	Total int        `json:"total"`
+}
+
+// RoleUpdateRequest defines model for RoleUpdateRequest.
+type RoleUpdateRequest struct {
+	// ConfirmProtectedAccountChange 取消保护（true→false）必须为 true
+	ConfirmProtectedAccountChange *bool     `json:"confirm_protected_account_change,omitempty"`
+	Name                          *string   `json:"name,omitempty"`
+	Note                          *string   `json:"note,omitempty"`
+	Permissions                   *[]string `json:"permissions,omitempty"`
+	ProtectedAccount              *bool     `json:"protected_account,omitempty"`
+}
+
+// RoleView defines model for RoleView.
+type RoleView struct {
+	CreatedAt        time.Time `json:"created_at"`
+	Guid             string    `json:"guid"`
+	Name             string    `json:"name"`
+	Note             string    `json:"note"`
+	ProtectedAccount bool      `json:"protected_account"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
 // SessionInfo defines model for SessionInfo.
 type SessionInfo struct {
 	CreatedAt  time.Time `json:"createdAt"`
@@ -155,11 +617,111 @@ type SessionInfo struct {
 	Jti        string    `json:"jti"`
 }
 
+// StrategyCandidatePage defines model for StrategyCandidatePage.
+type StrategyCandidatePage struct {
+	Data  []StrategyCandidateView `json:"data"`
+	Total int                     `json:"total"`
+}
+
+// StrategyCandidateView defines model for StrategyCandidateView.
+type StrategyCandidateView struct {
+	Guid string `json:"guid"`
+	Name string `json:"name"`
+	Note string `json:"note"`
+}
+
+// StrategyPage defines model for StrategyPage.
+type StrategyPage struct {
+	Data  []StrategyView `json:"data"`
+	Total int            `json:"total"`
+}
+
+// StrategyUpsertRequest defines model for StrategyUpsertRequest.
+type StrategyUpsertRequest struct {
+	ConfigOptions *map[string]string `json:"config_options,omitempty"`
+	Name          string             `json:"name"`
+	Note          *string            `json:"note,omitempty"`
+}
+
+// StrategyView defines model for StrategyView.
+type StrategyView struct {
+	// ConfigOptions DB TEXT 存 JSON 串，读出解析；空串 → {}
+	ConfigOptions map[string]string `json:"config_options"`
+	CreatedAt     time.Time         `json:"created_at"`
+	Guid          string            `json:"guid"`
+	Name          string            `json:"name"`
+	Note          string            `json:"note"`
+	UpdatedAt     time.Time         `json:"updated_at"`
+}
+
+// SysinfoRequest defines model for SysinfoRequest.
+type SysinfoRequest struct {
+	Cpu                    *string `json:"cpu,omitempty"`
+	Hostname               *string `json:"hostname,omitempty"`
+	Id                     *string `json:"id,omitempty"`
+	Memory                 *string `json:"memory,omitempty"`
+	Os                     *string `json:"os,omitempty"`
+	PresetAddressBookAlias *string `json:"preset-address-book-alias,omitempty"`
+
+	// PresetAddressBookName M2 接受不处理（M3 通讯录联动）
+	PresetAddressBookName     *string `json:"preset-address-book-name,omitempty"`
+	PresetAddressBookNote     *string `json:"preset-address-book-note,omitempty"`
+	PresetAddressBookPassword *string `json:"preset-address-book-password,omitempty"`
+	PresetAddressBookTag      *string `json:"preset-address-book-tag,omitempty"`
+
+	// PresetDeviceGroupName 按名关联 device_groups 并回写 peers.deviceGroupGuid
+	PresetDeviceGroupName *string `json:"preset-device-group-name,omitempty"`
+
+	// PresetNote 仅当 peers.note 为空时写入
+	PresetNote         *string `json:"preset-note,omitempty"`
+	PresetStrategyName *string `json:"preset-strategy-name,omitempty"`
+
+	// PresetUsername 非空真值才覆盖 sysinfos.preset_username
+	PresetUsername *string `json:"preset-username,omitempty"`
+	Username       *string `json:"username,omitempty"`
+	Uuid           string  `json:"uuid"`
+	Version        *string `json:"version,omitempty"`
+}
+
+// UpdateDeviceRequest defines model for UpdateDeviceRequest.
+type UpdateDeviceRequest struct {
+	// DeviceGroupName 关联变更需 super administrator；空串解绑
+	DeviceGroupName *string `json:"deviceGroupName"`
+	Note            *string `json:"note,omitempty"`
+
+	// StrategyName 关联变更需 super administrator；空串解绑
+	StrategyName *string `json:"strategyName"`
+
+	// UserName 关联变更需 super administrator；空串解绑
+	UserName *string `json:"userName"`
+}
+
 // UpdateMeRequest user 域请求字段为 snake_case（契约，禁止规范化）。
 type UpdateMeRequest struct {
 	DisplayName *string              `json:"display_name,omitempty"`
 	Email       *openapi_types.Email `json:"email,omitempty"`
 	Note        *string              `json:"note,omitempty"`
+}
+
+// UserGroupPage defines model for UserGroupPage.
+type UserGroupPage struct {
+	Data  []UserGroupView `json:"data"`
+	Total int             `json:"total"`
+}
+
+// UserGroupUpsertRequest defines model for UserGroupUpsertRequest.
+type UserGroupUpsertRequest struct {
+	Name string  `json:"name"`
+	Note *string `json:"note,omitempty"`
+}
+
+// UserGroupView defines model for UserGroupView.
+type UserGroupView struct {
+	Guid      string `json:"guid"`
+	IsDefault bool   `json:"is_default"`
+	Name      string `json:"name"`
+	Note      string `json:"note"`
+	UserCount int    `json:"user_count"`
 }
 
 // UserPayload 用户响应 payload（snake_case 契约，禁止规范化）。
@@ -179,8 +741,46 @@ type UserPayload struct {
 	Verifier      *string `json:"verifier,omitempty"`
 }
 
+// UserRolesResult defines model for UserRolesResult.
+type UserRolesResult struct {
+	Data []AssignmentDto `json:"data"`
+
+	// EffectiveScope 用户全部 assignment 聚合 scope
+	EffectiveScope UserRolesResultEffectiveScope `json:"effective_scope"`
+}
+
+// UserRolesResultEffectiveScope 用户全部 assignment 聚合 scope
+type UserRolesResultEffectiveScope string
+
+// UserTargetPage defines model for UserTargetPage.
+type UserTargetPage struct {
+	Data  []UserTargetView `json:"data"`
+	Total int              `json:"total"`
+}
+
+// UserTargetView defines model for UserTargetView.
+type UserTargetView struct {
+	Guid        string `json:"guid"`
+	IsProtected bool   `json:"is_protected"`
+
+	// Name displayName || username
+	Name string `json:"name"`
+}
+
+// CurrentParam defines model for CurrentParam.
+type CurrentParam = int
+
+// PageSizeParam defines model for PageSizeParam.
+type PageSizeParam = int
+
 // BadRequest NestJS 默认错误包络；message 为对象/字符串/字符串数组三种形态之一。
 type BadRequest = Error
+
+// Conflict NestJS 默认错误包络；message 为对象/字符串/字符串数组三种形态之一。
+type Conflict = Error
+
+// Forbidden NestJS 默认错误包络；message 为对象/字符串/字符串数组三种形态之一。
+type Forbidden = Error
 
 // NotFound NestJS 默认错误包络；message 为对象/字符串/字符串数组三种形态之一。
 type NotFound = Error
@@ -197,6 +797,71 @@ type DisableTfaJSONBody struct {
 type VerifyTfaJSONBody struct {
 	TfaCode string `json:"tfaCode"`
 }
+
+// AccessibleDeviceGroupsParams defines parameters for AccessibleDeviceGroups.
+type AccessibleDeviceGroupsParams struct {
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
+}
+
+// ListDeviceGroupsParams defines parameters for ListDeviceGroups.
+type ListDeviceGroupsParams struct {
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
+
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// DeviceGroupStrategyTargetsParams defines parameters for DeviceGroupStrategyTargets.
+type DeviceGroupStrategyTargetsParams struct {
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// AddDeviceGroupDevicesJSONBody defines parameters for AddDeviceGroupDevices.
+type AddDeviceGroupDevicesJSONBody = []string
+
+// RemoveDeviceGroupDevicesJSONBody defines parameters for RemoveDeviceGroupDevices.
+type RemoveDeviceGroupDevicesJSONBody = []string
+
+// ListDevicesParams defines parameters for ListDevices.
+type ListDevicesParams struct {
+	Id       *string                    `form:"id,omitempty" json:"id,omitempty"`
+	Status   *ListDevicesParamsStatus   `form:"status,omitempty" json:"status,omitempty"`
+	IsOnline *ListDevicesParamsIsOnline `form:"is_online,omitempty" json:"is_online,omitempty"`
+
+	// DeviceName LIKE 匹配 sysinfos.hostname
+	DeviceName *string `form:"device_name,omitempty" json:"device_name,omitempty"`
+	UserName   *string `form:"user_name,omitempty" json:"user_name,omitempty"`
+
+	// DeviceUsername LIKE 匹配 sysinfos.username
+	DeviceUsername *string `form:"device_username,omitempty" json:"device_username,omitempty"`
+	Os             *string `form:"os,omitempty" json:"os,omitempty"`
+
+	// DeviceGroupName 精确匹配（与 /peers 的 LIKE 不同）
+	DeviceGroupName *string `form:"device_group_name,omitempty" json:"device_group_name,omitempty"`
+	DeviceGroupGuid *string `form:"device_group_guid,omitempty" json:"device_group_guid,omitempty"`
+
+	// GroupName LIKE 匹配设备组名
+	GroupName *string `form:"group_name,omitempty" json:"group_name,omitempty"`
+
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// ListDevicesParamsStatus defines parameters for ListDevices.
+type ListDevicesParamsStatus string
+
+// ListDevicesParamsIsOnline defines parameters for ListDevices.
+type ListDevicesParamsIsOnline string
 
 // OidcAuthQueryParams defines parameters for OidcAuthQuery.
 type OidcAuthQueryParams struct {
@@ -232,6 +897,118 @@ type PasskeyTfaToggleJSONBody struct {
 	Enabled bool `json:"enabled"`
 }
 
+// ListPeersParams defines parameters for ListPeers.
+type ListPeersParams struct {
+	// Accessible 兼容字段，忽略
+	Accessible      *string                  `form:"accessible,omitempty" json:"accessible,omitempty"`
+	Id              *string                  `form:"id,omitempty" json:"id,omitempty"`
+	Status          *ListPeersParamsStatus   `form:"status,omitempty" json:"status,omitempty"`
+	IsOnline        *ListPeersParamsIsOnline `form:"is_online,omitempty" json:"is_online,omitempty"`
+	UserName        *string                  `form:"user_name,omitempty" json:"user_name,omitempty"`
+	DeviceGroupGuid *string                  `form:"device_group_guid,omitempty" json:"device_group_guid,omitempty"`
+
+	// DeviceGroupName LIKE 匹配（与 /devices 的精确匹配不同）
+	DeviceGroupName *string `form:"device_group_name,omitempty" json:"device_group_name,omitempty"`
+
+	// Os LIKE 匹配 sysinfos.os
+	Os *string `form:"os,omitempty" json:"os,omitempty"`
+
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// ListPeersParamsStatus defines parameters for ListPeers.
+type ListPeersParamsStatus string
+
+// ListPeersParamsIsOnline defines parameters for ListPeers.
+type ListPeersParamsIsOnline string
+
+// ListRolesParams defines parameters for ListRoles.
+type ListRolesParams struct {
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
+	Note *string `form:"note,omitempty" json:"note,omitempty"`
+
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// ListStrategiesParams defines parameters for ListStrategies.
+type ListStrategiesParams struct {
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
+
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// StrategyCandidatesParams defines parameters for StrategyCandidates.
+type StrategyCandidatesParams struct {
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// StrategyTargetCandidatesParams defines parameters for StrategyTargetCandidates.
+type StrategyTargetCandidatesParams struct {
+	TargetType StrategyTargetCandidatesParamsTargetType `form:"target_type" json:"target_type"`
+
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// StrategyTargetCandidatesParamsTargetType defines parameters for StrategyTargetCandidates.
+type StrategyTargetCandidatesParamsTargetType string
+
+// StrategyAssignmentsParams defines parameters for StrategyAssignments.
+type StrategyAssignmentsParams struct {
+	TargetType StrategyAssignmentsParamsTargetType `form:"target_type" json:"target_type"`
+
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// StrategyAssignmentsParamsTargetType defines parameters for StrategyAssignments.
+type StrategyAssignmentsParamsTargetType string
+
+// ListUserGroupsParams defines parameters for ListUserGroups.
+type ListUserGroupsParams struct {
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
+
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// ListUserGroupMembersParams defines parameters for ListUserGroupMembers.
+type ListUserGroupMembersParams struct {
+	// Search LIKE 匹配 username 或 email
+	Search *string `form:"search,omitempty" json:"search,omitempty"`
+
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
 // UploadMyAvatarMultipartBody defines parameters for UploadMyAvatar.
 type UploadMyAvatarMultipartBody struct {
 	Avatar openapi_types.File `json:"avatar"`
@@ -242,6 +1019,30 @@ type DisableTfaJSONRequestBody DisableTfaJSONBody
 
 // VerifyTfaJSONRequestBody defines body for VerifyTfa for application/json ContentType.
 type VerifyTfaJSONRequestBody VerifyTfaJSONBody
+
+// CreateDeviceGroupJSONRequestBody defines body for CreateDeviceGroup for application/json ContentType.
+type CreateDeviceGroupJSONRequestBody = DeviceGroupUpsertRequest
+
+// UpdateDeviceGroupJSONRequestBody defines body for UpdateDeviceGroup for application/json ContentType.
+type UpdateDeviceGroupJSONRequestBody = DeviceGroupUpsertRequest
+
+// AddDeviceGroupDevicesJSONRequestBody defines body for AddDeviceGroupDevices for application/json ContentType.
+type AddDeviceGroupDevicesJSONRequestBody = AddDeviceGroupDevicesJSONBody
+
+// RemoveDeviceGroupDevicesJSONRequestBody defines body for RemoveDeviceGroupDevices for application/json ContentType.
+type RemoveDeviceGroupDevicesJSONRequestBody = RemoveDeviceGroupDevicesJSONBody
+
+// UpdateDeviceStatusJSONRequestBody defines body for UpdateDeviceStatus for application/json ContentType.
+type UpdateDeviceStatusJSONRequestBody = DeviceStatusUpdateRequest
+
+// UpdateDeviceJSONRequestBody defines body for UpdateDevice for application/json ContentType.
+type UpdateDeviceJSONRequestBody = UpdateDeviceRequest
+
+// DisconnectDeviceJSONRequestBody defines body for DisconnectDevice for application/json ContentType.
+type DisconnectDeviceJSONRequestBody = DisconnectRequest
+
+// HeartbeatJSONRequestBody defines body for Heartbeat for application/json ContentType.
+type HeartbeatJSONRequestBody = HeartbeatRequest
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
@@ -261,6 +1062,36 @@ type PasskeyRegisterVerifyJSONRequestBody PasskeyRegisterVerifyJSONBody
 // PasskeyTfaToggleJSONRequestBody defines body for PasskeyTfaToggle for application/json ContentType.
 type PasskeyTfaToggleJSONRequestBody PasskeyTfaToggleJSONBody
 
+// CreateRoleJSONRequestBody defines body for CreateRole for application/json ContentType.
+type CreateRoleJSONRequestBody = RoleCreateRequest
+
+// UpdateRoleJSONRequestBody defines body for UpdateRole for application/json ContentType.
+type UpdateRoleJSONRequestBody = RoleUpdateRequest
+
+// CreateStrategyJSONRequestBody defines body for CreateStrategy for application/json ContentType.
+type CreateStrategyJSONRequestBody = StrategyUpsertRequest
+
+// UpdateStrategyJSONRequestBody defines body for UpdateStrategy for application/json ContentType.
+type UpdateStrategyJSONRequestBody = StrategyUpsertRequest
+
+// AssignStrategyJSONRequestBody defines body for AssignStrategy for application/json ContentType.
+type AssignStrategyJSONRequestBody = AssignRequest
+
+// UnassignStrategyJSONRequestBody defines body for UnassignStrategy for application/json ContentType.
+type UnassignStrategyJSONRequestBody = AssignRequest
+
+// SysinfoJSONRequestBody defines body for Sysinfo for application/json ContentType.
+type SysinfoJSONRequestBody = SysinfoRequest
+
+// CreateUserGroupJSONRequestBody defines body for CreateUserGroup for application/json ContentType.
+type CreateUserGroupJSONRequestBody = UserGroupUpsertRequest
+
+// UpdateUserGroupJSONRequestBody defines body for UpdateUserGroup for application/json ContentType.
+type UpdateUserGroupJSONRequestBody = UserGroupUpsertRequest
+
+// AddUserGroupMembersJSONRequestBody defines body for AddUserGroupMembers for application/json ContentType.
+type AddUserGroupMembersJSONRequestBody = MoveUsersRequest
+
 // UpdateMeJSONRequestBody defines body for UpdateMe for application/json ContentType.
 type UpdateMeJSONRequestBody = UpdateMeRequest
 
@@ -269,6 +1100,9 @@ type UploadMyAvatarMultipartRequestBody UploadMyAvatarMultipartBody
 
 // ChangeMyPasswordJSONRequestBody defines body for ChangeMyPassword for application/json ContentType.
 type ChangeMyPasswordJSONRequestBody = ChangePasswordRequest
+
+// ReplaceUserRolesJSONRequestBody defines body for ReplaceUserRoles for application/json ContentType.
+type ReplaceUserRolesJSONRequestBody = ReplaceRolesRequest
 
 // AsErrorMessage0 returns the union data inside the Error_Message as a ErrorMessage0
 func (t Error_Message) AsErrorMessage0() (ErrorMessage0, error) {

@@ -39,9 +39,13 @@ var ErrTokenInvalid = errors.New("token invalid")
 const (
 	authorizationHeader = "Authorization"
 	accessTokenCookie   = "access_token"
-	// tokenRejectedMessage 与参考实现对齐的 401 固定文案。
-	tokenRejectedMessage = "Token expired or revoked"
+	// TokenRejectedMessage 与参考实现对齐的 401 固定文案（导出供 RBAC
+	// 中间件防御路径复用，保持文案单源）。
+	TokenRejectedMessage = "Token expired or revoked"
 )
+
+// tokenRejectedMessage 为包内旧名（保持既有引用不变）。
+const tokenRejectedMessage = TokenRejectedMessage
 
 // JWTAuth Bearer 优先、回退 cookie access_token 双通道提取；
 // 每个受保护请求经 TokenValidator 校验（含 user_tokens 撤销表查询），
@@ -95,4 +99,10 @@ func IdentityFromContext(ctx context.Context) *Identity {
 		return v
 	}
 	return nil
+}
+
+// WithIdentity 测试与 RBAC 中间件场景的身份注入辅助
+// （生产路径经 JWTAuth 注入）。
+func WithIdentity(ctx context.Context, ident *Identity) context.Context {
+	return contextWithIdentity(ctx, ident)
 }

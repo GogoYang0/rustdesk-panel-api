@@ -1,6 +1,9 @@
 package middleware
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -57,5 +60,77 @@ func (rl *RateLimiter) allow(key string, lim rate.Limit, burst int) bool {
 		rl.buckets[key] = l
 	}
 	rl.mu.Unlock()
+	return l.Allow()
+}
+
+// deviceMaxBody 设备端协议报文读取上限（1 MiB，远超实际心跳/系统信息体量）。
+const deviceMaxBody = 1 << 20
+
+// DeviceRateLimiter 设备维度限流器（M2 设备端协议专用，设计 §1.4）：
+// tracker 取 body.id → body.uuid → IP 回退，键为 {tracker}:{method}:{route}。
+// 与 per-IP RateLimiter 并行使用（heartbeat 10/min、sysinfo 5/min）。
+type DeviceRateLimiter struct {
+	mu      sync.Mutex
+	buckets map[string]*rate.Limiter
+	enabled bool
+}
+
+// NewDeviceRateLimiter 构建设备维度限流器；enabled=false 时 Wrap 直通。
+func NewDeviceRateLimiter(enabled bool) *DeviceRateLimiter {
+	return &DeviceRateLimiter{buckets: make(map[string]*rate.Limiter), enabled: enabled}
+}
+
+// deviceTrackerBody 宽松解析心跳/系统信息报文中可作 tracker 的字段
+// （仅提取 id/uuid；解析失败回退 IP，不参与严格校验）。
+type deviceTrackerBody struct {
+	ID   string `json:"id"`
+	UUID string `json:"uuid"`
+}
+
+// Wrap 对设备端协议路由应用 perMinute 限流：
+// 读取请求体（上限 deviceMaxBody）→ 提取 tracker → 回灌 body →
+// 令牌桶判定，超限 429（与全局 Throttler 同文案）。
+func (dl *DeviceRateLimiter) Wrap(routeKey string, perMinute int, next http.Handler) http.Handler {
+	if !dl.enabled || perMinute <= 0 {
+		return next
+	}
+	lim := rate.Every(time.Minute / time.Duration(perMinute))
+	burst := perMinute
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(io.LimitReader(r.Body, deviceMaxBody))
+		if err == nil {
+			// 回灌请求体供后续 DecodeJSON 读取。
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			var probe deviceTrackerBody
+			_ = json.Unmarshal(body, &probe)
+			tracker := probe.ID
+			if tracker == "" {
+				tracker = probe.UUID
+			}
+			if tracker == "" {
+				tracker = ClientIP(r)
+			}
+			if !dl.allow(tracker+"|"+r.Method+" "+routeKey, lim, burst) {
+				httpx.ErrTooMany(w)
+				return
+			}
+		}
+		// 读体失败（连接中断等）时直接透传，由绑定层报错。
+		next.ServeHTTP(w, r)
+	})
+}
+
+// allow 与 RateLimiter.allow 同构（独立桶空间）。
+func (dl *DeviceRateLimiter) allow(key string, lim rate.Limit, burst int) bool {
+	dl.mu.Lock()
+	if len(dl.buckets) >= maxBuckets {
+		dl.buckets = make(map[string]*rate.Limiter)
+	}
+	l, ok := dl.buckets[key]
+	if !ok {
+		l = rate.NewLimiter(lim, burst)
+		dl.buckets[key] = l
+	}
+	dl.mu.Unlock()
 	return l.Allow()
 }
