@@ -52,10 +52,10 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	profileSvc := usersvc.NewProfileService(users)
 	avatarSvc := usersvc.NewAvatarService(users, deps.Config.DataDir)
 
-	// RBAC 横切件：T01 以空端口装配（无 M2 路由，决策不会被触达），
-	// T02 在此接入真实仓储适配与审计持久化。
-	auditSvc := rbac.NewAuditService(nil, deps.Logger)
-	authzSvc := rbac.NewAuthorizationService(rbac.Stores{}, auditSvc)
+	// RBAC 横切件：真实仓储适配（T02 起接通）。授权决策实时查库
+	//（共享知识 3）；审计落 console_audits（denied 失败仅告警）。
+	auditSvc := rbac.NewAuditService(repository.NewConsoleAuditRepo(deps.DB), deps.Logger)
+	authzSvc := rbac.NewAuthorizationService(NewRBACStores(deps.DB), auditSvc)
 	rbacMW := rbac.NewMiddleware(authzSvc)
 
 	authH := handler.NewAuthHandler(loginSvc, tfaSvc, passkeySvc, tokenSvc)
