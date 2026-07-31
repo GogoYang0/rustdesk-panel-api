@@ -1,20 +1,44 @@
 package migration
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
+	"uuid"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/entity"
-	"github.com/rustdesk-panel/rustdesk-panel-api/internal/testutil"
 )
+
+// newMemoryDB 包内自建唯一命名内存库（与 testutil.NewMemoryDB 同构；
+// 本包不依赖 testutil——testutil/seed_m2 反向依赖本包，保持单向）。
+func newMemoryDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	dsn := fmt.Sprintf("file:rp_%s?mode=memory&cache=shared&_pragma=foreign_keys(1)", uuid.New().String())
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
+		Logger: gormlogger.Discard,
+	})
+	if err != nil {
+		t.Fatalf("testutil: open memory sqlite failed: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("testutil: unwrap sql.DB failed: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	return db
+}
 
 // openMigrated 构建内存库与迁移运行器（不自动执行 Up）。
 func openMigrated(t *testing.T) (*Migrator, *gorm.DB) {
 	t.Helper()
-	db := testutil.NewMemoryDB(t)
+	db := newMemoryDB(t)
 	m, err := New(db, "sqlite")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -33,8 +57,8 @@ func TestMigrateUpShowDown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Version: %v", err)
 	}
-	if v != 1 || dirty {
-		t.Errorf("version = %d dirty = %v, want 1 false", v, dirty)
+	if v != 2 || dirty {
+		t.Errorf("version = %d dirty = %v, want 2 false", v, dirty)
 	}
 
 	// 幂等：重复 Up 无错（ErrNoChange 视为成功）。
@@ -46,8 +70,14 @@ func TestMigrateUpShowDown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Show: %v", err)
 	}
-	if len(infos) != 1 || infos[0].Version != 1 || !infos[0].Applied || infos[0].Name != "m1_baseline" {
-		t.Errorf("Show = %+v", infos)
+	if len(infos) != 2 {
+		t.Fatalf("Show len = %d, want 2: %+v", len(infos), infos)
+	}
+	if infos[0].Version != 1 || !infos[0].Applied || infos[0].Name != "m1_baseline" {
+		t.Errorf("Show[0] = %+v", infos[0])
+	}
+	if infos[1].Version != 2 || !infos[1].Applied || infos[1].Name != "m2_core" {
+		t.Errorf("Show[1] = %+v", infos[1])
 	}
 
 	// Down 全部回退：users 表应不存在。
@@ -83,13 +113,25 @@ func TestMigrateColumnContract(t *testing.T) {
 	}
 
 	cases := map[string]any{
-		"users":               entity.User{},
-		"user_tokens":         entity.UserToken{},
-		"login_sessions":      entity.LoginSession{},
-		"passkey_credentials": entity.PasskeyCredential{},
-		"user_groups":         entity.UserGroup{},
-		"oidc_providers":      entity.OidcProvider{},
-		"oidc_auth_states":    entity.OidcAuthState{},
+		"users":                              entity.User{},
+		"user_tokens":                        entity.UserToken{},
+		"login_sessions":                     entity.LoginSession{},
+		"passkey_credentials":                entity.PasskeyCredential{},
+		"user_groups":                        entity.UserGroup{},
+		"oidc_providers":                     entity.OidcProvider{},
+		"oidc_auth_states":                   entity.OidcAuthState{},
+		"strategies":                         entity.Strategy{},
+		"device_groups":                      entity.DeviceGroup{},
+		"device_group_user_permissions":      entity.DeviceGroupUserPermission{},
+		"user_user_permissions":              entity.UserUserPermission{},
+		"peers":                              entity.Peer{},
+		"sysinfos":                           entity.Sysinfo{},
+		"active_connections":                 entity.ActiveConnection{},
+		"roles":                              entity.Role{},
+		"role_permissions":                   entity.RolePermission{},
+		"user_role_assignments":              entity.UserRoleAssignment{},
+		"user_role_assignment_device_groups": entity.UserRoleAssignmentDeviceGroup{},
+		"console_audits":                     entity.ConsoleAudit{},
 	}
 	for table, ent := range cases {
 		t.Run(table, func(t *testing.T) {
@@ -135,6 +177,29 @@ func TestMigrateSingleOwnerIndex(t *testing.T) {
 	if err := db.Exec(`INSERT INTO users (guid, username, status, isAdmin) VALUES (?, ?, 1, 0)`,
 		"00000000-0000-4000-8000-00000000a003", "normal").Error; err != nil {
 		t.Fatalf("non-admin insert: %v", err)
+	}
+}
+
+// TestSQLiteNoUsersStrategyFK 共享知识 10：SQLite 方言不给
+// users.strategyGuid 加 FK（不能 ALTER ADD CONSTRAINT，语义由应用层
+// 事务保证）；MySQL 方言经 FK_users_strategy 提供 schema 平价。
+func TestSQLiteNoUsersStrategyFK(t *testing.T) {
+	m, db := openMigrated(t)
+	if err := m.Up(); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+
+	var refs []struct {
+		Table string
+		From  string
+	}
+	if err := db.Raw(`SELECT "table" AS "table", "from" AS "from" FROM pragma_foreign_key_list('users')`).Scan(&refs).Error; err != nil {
+		t.Fatalf("pragma_foreign_key_list(users): %v", err)
+	}
+	for _, ref := range refs {
+		if ref.Table == "strategies" {
+			t.Errorf("users should not reference strategies in sqlite dialect, got %+v", refs)
+		}
 	}
 }
 
