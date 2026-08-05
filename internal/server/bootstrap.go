@@ -5,10 +5,11 @@ import (
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/rbac"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/repository"
 	authsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/auth"
+	devicesvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/device"
 	usersvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/user"
 )
 
-// Domain 装配完成的认证/用户域服务容器（仓储 → 服务 → handler 全链）。
+// Domain 装配完成的认证/用户/设备域服务容器（仓储 → 服务 → handler 全链）。
 type Domain struct {
 	Tokens  *authsvc.TokenService
 	Login   *authsvc.AuthService
@@ -23,6 +24,10 @@ type Domain struct {
 	// RbacMW 为路由策略中间件族（HandlePolicy 使用）。
 	Rbac   *rbac.AuthorizationService
 	RbacMW *rbac.Middleware
+
+	// 设备域（T03）：心跳/系统信息端协议 + /peers 查询 + /devices 管理。
+	Heartbeat *handler.HeartbeatHandler
+	Devices   *handler.DeviceHandler
 
 	Auth *handler.AuthHandler
 	Oidc *handler.OidcHandler
@@ -64,19 +69,42 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 		return nil, err
 	}
 	userH := handler.NewUserHandler(profileSvc, avatarSvc)
+
+	// 设备域（T03）：协议（heartbeat/sysinfo）+ /peers 查询 + /devices
+	// 管理。断连队列为进程内单例（DisconnectStore），心跳与管理动作
+	// 共享同一实例才能形成"入队 → 心跳下发 → 确认出队"回路。
+	peerRepo := repository.NewPeerRepo(deps.DB)
+	connsRepo := repository.NewActiveConnectionRepo(deps.DB)
+	sysinfoRepo := repository.NewSysinfoRepo(deps.DB)
+	strategyRepo := repository.NewStrategyRepo(deps.DB)
+	deviceGroupRepo := repository.NewDeviceGroupRepo(deps.DB)
+	disconnects := devicesvc.NewDisconnectStore()
+
+	heartbeatSvc := devicesvc.NewHeartbeatService(
+		peerRepo, connsRepo, strategyRepo, users, deviceGroupRepo, disconnects, deps.Logger)
+	sysinfoSvc := devicesvc.NewSysinfoService(peerRepo, sysinfoRepo, deviceGroupRepo, deps.Logger)
+	querySvc := devicesvc.NewQueryService(peerRepo, sysinfoRepo, users, deviceGroupRepo, strategyRepo)
+	adminSvc := devicesvc.NewAdminService(
+		authzSvc, peerRepo, sysinfoRepo, users, deviceGroupRepo, strategyRepo, disconnects)
+
+	heartbeatH := handler.NewHeartbeatHandler(heartbeatSvc, sysinfoSvc)
+	deviceH := handler.NewDeviceHandler(authzSvc, querySvc, adminSvc)
+
 	return &Domain{
-		Tokens:  tokenSvc,
-		Login:   loginSvc,
-		Tfa:     tfaSvc,
-		Passkey: passkeySvc,
-		OIDC:    oidcSvc,
-		Cleanup: cleanupSvc,
-		Profile: profileSvc,
-		Avatar:  avatarSvc,
-		Rbac:    authzSvc,
-		RbacMW:  rbacMW,
-		Auth:    authH,
-		Oidc:    oidcH,
-		User:    userH,
+		Tokens:    tokenSvc,
+		Login:     loginSvc,
+		Tfa:       tfaSvc,
+		Passkey:   passkeySvc,
+		OIDC:      oidcSvc,
+		Cleanup:   cleanupSvc,
+		Profile:   profileSvc,
+		Avatar:    avatarSvc,
+		Rbac:      authzSvc,
+		RbacMW:    rbacMW,
+		Heartbeat: heartbeatH,
+		Devices:   deviceH,
+		Auth:      authH,
+		Oidc:      oidcH,
+		User:      userH,
 	}, nil
 }
