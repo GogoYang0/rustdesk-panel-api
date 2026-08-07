@@ -194,6 +194,60 @@ func (r *PeerRepo) ListScoped(ctx context.Context, scope GuidSet, f DeviceFilter
 	return listPeersPage(base, applyDeviceFilter(f), f.Current, f.PageSize)
 }
 
+// ListAll 全量分页（/peers 管理员视图，无 scope 限制；过滤语义同
+// PeerFilter）。与 ListScoped/ListAccessiblePeers 共用分页执行器。
+func (r *PeerRepo) ListAll(ctx context.Context, f PeerFilter) ([]entity.Peer, int64, error) {
+	return listPeersPage(r.db.WithContext(ctx).Table("peers p"), applyPeerFilter(f), f.Current, f.PageSize)
+}
+
+// SetStatus 启停设备（PATCH /api/devices/status 单目标写入）。
+func (r *PeerRepo) SetStatus(ctx context.Context, uuid string, status int) error {
+	return r.db.WithContext(ctx).Model(&entity.Peer{}).
+		Where("uuid = ?", uuid).
+		Update("status", status).Error
+}
+
+// UpdateColumnsByUUID 按列名映射更新设备（设备关联变更）。
+// updates 的键必须是实体 tag 中的 DB 列名（服务层仅传常量键）；
+// nil 值置 NULL（外键解绑语义）。
+func (r *PeerRepo) UpdateColumnsByUUID(ctx context.Context, uuid string, updates map[string]any) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&entity.Peer{}).
+		Where("uuid = ?", uuid).
+		Updates(updates).Error
+}
+
+// UpdateDeviceGroupGuid 关联设备组（sysinfo preset-device-group-name
+// 命中时回写 peers.deviceGroupGuid）。
+func (r *PeerRepo) UpdateDeviceGroupGuid(ctx context.Context, uuid, guid string) error {
+	return r.db.WithContext(ctx).Model(&entity.Peer{}).
+		Where("uuid = ?", uuid).
+		Update("deviceGroupGuid", guid).Error
+}
+
+// FillNoteIfEmpty note 兜底写入（sysinfo preset-note 语义：
+// 仅当 peers.note 为空时写入，不覆盖已有注记）。
+func (r *PeerRepo) FillNoteIfEmpty(ctx context.Context, uuid, note string) error {
+	return r.db.WithContext(ctx).Model(&entity.Peer{}).
+		Where("uuid = ? AND (note IS NULL OR note = '')", uuid).
+		Update("note", note).Error
+}
+
+// DeleteWithConns 事务删除设备并显式级联删除 active_connections
+// （共享知识 9：应用层事务显式级联，SQLite/MySQL 行为统一，
+// 不依赖 DB FK 的 CASCADE 声明）。
+func (r *PeerRepo) DeleteWithConns(ctx context.Context, uuid string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("deviceUuid = ?", uuid).
+			Delete(&entity.ActiveConnection{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("uuid = ?", uuid).Delete(&entity.Peer{}).Error
+	})
+}
+
 // listPeersPage 通用分页执行：count 与 fetch 独立语句（互不污染），
 // 排序固定 peer.id ASC（契约）。
 func listPeersPage(base *gorm.DB, apply func(*gorm.DB) *gorm.DB, current, pageSize int) ([]entity.Peer, int64, error) {

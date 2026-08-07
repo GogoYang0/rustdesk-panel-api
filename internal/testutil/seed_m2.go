@@ -77,7 +77,15 @@ func SeedM2(t *testing.T, db *gorm.DB) *SeedM2Data {
 	// ---- 用户 ----
 	// email 必须唯一（UQ_users_email；空串非 NULL 会互相冲突），
 	// oidcSubject 为指针零值 NULL 不受唯一索引影响。
+	// 兼容 apptest 全栈场景：database.Seed 已产生唯一超管
+	// （UQ_users_single_owner：isAdmin=1 部分唯一索引，全库至多一行），
+	// 此时复用既有超管（databk）而非新建 seed-user-admin；全新库
+	// （仓储级测试）则照常创建。
 	admin := &entity.User{Guid: "seed-user-admin", Username: "seed-admin", Email: "seed-admin@example.com", Status: 1, IsAdmin: true, CreatedAt: now, UpdatedAt: now}
+	var existingAdmin entity.User
+	if err := db.WithContext(ctx).Where("isAdmin = ?", true).First(&existingAdmin).Error; err == nil {
+		admin = &existingAdmin
+	}
 	scoped := &entity.User{Guid: "seed-user-scoped", Username: "scoped", Email: "seed-scoped@example.com", Status: 1, CreatedAt: now, UpdatedAt: now}
 	global := &entity.User{Guid: "seed-user-global", Username: "global", Email: "seed-global@example.com", Status: 1, CreatedAt: now, UpdatedAt: now}
 	disabled := &entity.User{Guid: "seed-user-disabled", Username: "disabled", Email: "seed-disabled@example.com", Status: 0, CreatedAt: now, UpdatedAt: now}
@@ -113,10 +121,12 @@ func SeedM2(t *testing.T, db *gorm.DB) *SeedM2Data {
 		{ConnID: 12, DeviceUuid: peerA.UUID, CreatedAt: now},
 	}
 
-	// ---- 铺库（外键生效：先被引用后引用）----
-	rows := []any{
-		roleDev, roleGlobal, roleProt,
-		admin, scoped, global, disabled, owner,
+	// ---- 铺库（外键生效：先被引用后引用；复用超管时跳过 admin 行）----
+	rows := []any{roleDev, roleGlobal, roleProt}
+	if admin.Guid == "seed-user-admin" {
+		rows = append(rows, admin)
+	}
+	rows = append(rows, scoped, global, disabled, owner,
 		strat, dg1, dg2,
 		asgDev, asgGlobal, asgProt,
 		perms[0], perms[1], perms[2], perms[3],
@@ -124,8 +134,7 @@ func SeedM2(t *testing.T, db *gorm.DB) *SeedM2Data {
 		dgPerm, uup,
 		peerA, peerB, peerC,
 		sysA, sysB,
-		&conns[0], &conns[1],
-	}
+		&conns[0], &conns[1])
 	for _, row := range rows {
 		if err := db.WithContext(ctx).Create(row).Error; err != nil {
 			t.Fatalf("testutil: seed m2 create %T failed: %v", row, err)

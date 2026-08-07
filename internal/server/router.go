@@ -109,12 +109,12 @@ func hf(h func(http.ResponseWriter, *http.Request)) http.Handler {
 //	policy   授权策略（Public 跳过 JWT；Auth 仅 JWT；
 //	         Perm/AdminGuard/SuperAdmin 在 JWT 后执行查库决策）
 //	perMinute>0 时启用 per-IP per-route 限流（次/分钟）
+//
+// 包装顺序（执行序）：限流 → JWTAuth → 策略决策 → handler——策略
+// 中间件必须在 JWTAuth 内层，IdentityFromContext 才能读到已注入身份。
 func (rt *Router) HandlePolicy(method, pattern string, policy rbac.Policy, perMinute int, h http.Handler) {
 	if perMinute > 0 {
 		h = rt.limiter.Wrap(pattern, perMinute, h)
-	}
-	if policy.Kind != rbac.PolicyPublic {
-		h = middleware.JWTAuth(rt.validator)(h)
 	}
 	if rt.rbacMW == nil {
 		// 未装配 Domain 即注册策略路由属编程错误，启动期快速失败。
@@ -127,6 +127,9 @@ func (rt *Router) HandlePolicy(method, pattern string, policy rbac.Policy, perMi
 		h = rt.rbacMW.RequireAdminGuard()(h)
 	case rbac.PolicySuperAdmin:
 		h = rt.rbacMW.RequireSuperAdmin()(h)
+	}
+	if policy.Kind != rbac.PolicyPublic {
+		h = middleware.JWTAuth(rt.validator)(h)
 	}
 	rt.mux.Handle(method+" "+pattern, h)
 }
@@ -182,4 +185,21 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 	rt.Handle(http.MethodPost, "/api/users/me/avatar", false, 10, hf(d.User.UploadAvatar))
 	rt.Handle(http.MethodDelete, "/api/users/me/avatar", false, 10, hf(d.User.DeleteAvatar))
 	rt.Handle(http.MethodGet, "/api/avatars/{filename}", true, 60, hf(d.User.GetAvatar))
+
+	// ---- 设备端协议（公开，§1.4）：不引入设备 token；设备维度限流
+	// （tracker=id→uuid→IP 回退）以显式组合方式前置，不叠加 per-IP
+	// 限流。直挂 mux：绕过 Handle 的 per-IP 限流与 JWT 包装。
+	rt.mux.Handle(http.MethodPost+" /api/heartbeat",
+		rt.DeviceRateLimit("/api/heartbeat", 10, hf(d.Heartbeat.Heartbeat)))
+	rt.mux.Handle(http.MethodPost+" /api/sysinfo",
+		rt.DeviceRateLimit("/api/sysinfo", 5, hf(d.Heartbeat.Sysinfo)))
+
+	// ---- 设备域（§1.6 device 档）：/peers 无权限码（Auth+状态复核），
+	// /devices×5 走 Perm 策略（scope 决策查库）；资源级复核在服务层。
+	rt.HandlePolicy(http.MethodGet, "/api/peers", rbac.AuthPolicy(), 0, hf(d.Devices.ListPeers))
+	rt.HandlePolicy(http.MethodGet, "/api/devices", rbac.PermPolicy(rbac.CodeDevicesView), 0, hf(d.Devices.ListDevices))
+	rt.HandlePolicy(http.MethodPatch, "/api/devices/status", rbac.PermPolicy(rbac.CodeDevicesStatus), 0, hf(d.Devices.UpdateDeviceStatus))
+	rt.HandlePolicy(http.MethodPatch, "/api/devices/{guid}", rbac.PermPolicy(rbac.CodeDevicesEdit), 0, hf(d.Devices.UpdateDevice))
+	rt.HandlePolicy(http.MethodDelete, "/api/devices/{guid}", rbac.PermPolicy(rbac.CodeDevicesDelete), 0, hf(d.Devices.DeleteDevice))
+	rt.HandlePolicy(http.MethodPost, "/api/devices/{uuid}/disconnect", rbac.PermPolicy(rbac.CodeDevicesDisconnect), 0, hf(d.Devices.Disconnect))
 }
