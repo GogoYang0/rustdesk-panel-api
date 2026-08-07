@@ -202,4 +202,31 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 	rt.HandlePolicy(http.MethodPatch, "/api/devices/{guid}", rbac.PermPolicy(rbac.CodeDevicesEdit), 0, hf(d.Devices.UpdateDevice))
 	rt.HandlePolicy(http.MethodDelete, "/api/devices/{guid}", rbac.PermPolicy(rbac.CodeDevicesDelete), 0, hf(d.Devices.DeleteDevice))
 	rt.HandlePolicy(http.MethodPost, "/api/devices/{uuid}/disconnect", rbac.PermPolicy(rbac.CodeDevicesDisconnect), 0, hf(d.Devices.Disconnect))
+
+	// ---- 设备组域（§1.6 device-group 档）：accessible 无权限码（Auth+
+	// 状态复核）；列表/CRUD/加减设备 AdminGuard；strategy-targets 走
+	// Perm(strategies.assign)。注意路径差异：accessible 在 /api/device-group
+	// （单数），其余在 /api/device-groups（复数）——参考契约原样。
+	rt.HandlePolicy(http.MethodGet, "/api/device-group/accessible", rbac.AuthPolicy(), 0, hf(d.DeviceGroups.Accessible))
+	rt.HandlePolicy(http.MethodGet, "/api/device-groups", rbac.AdminGuardPolicy(), 0, hf(d.DeviceGroups.List))
+	rt.HandlePolicy(http.MethodPost, "/api/device-groups", rbac.AdminGuardPolicy(), 0, hf(d.DeviceGroups.Create))
+	rt.HandlePolicy(http.MethodGet, "/api/device-groups/strategy-targets", rbac.PermPolicy(rbac.CodeStrategiesAssign), 0, hf(d.DeviceGroups.StrategyTargets))
+	rt.HandlePolicy(http.MethodPatch, "/api/device-groups/{guid}", rbac.AdminGuardPolicy(), 0, hf(d.DeviceGroups.Update))
+	rt.HandlePolicy(http.MethodDelete, "/api/device-groups/{guid}", rbac.AdminGuardPolicy(), 0, hf(d.DeviceGroups.Delete))
+	rt.HandlePolicy(http.MethodPost, "/api/device-groups/{guid}", rbac.AdminGuardPolicy(), 0, hf(d.DeviceGroups.AddDevices))
+	rt.HandlePolicy(http.MethodDelete, "/api/device-groups/{guid}/devices", rbac.AdminGuardPolicy(), 0, hf(d.DeviceGroups.RemoveDevices))
+
+	// ---- 策略域（§1.6 strategy 档）：CRUD 按 view/create/edit/delete
+	// 分码；candidates/target-candidates/assignments/assign/unassign 均
+	// Perm(strategies.assign)（scope 决策查库，资源复核在服务层）。
+	rt.HandlePolicy(http.MethodGet, "/api/strategies", rbac.PermPolicy(rbac.CodeStrategiesView), 0, hf(d.Strategy.List))
+	rt.HandlePolicy(http.MethodPost, "/api/strategies", rbac.PermPolicy(rbac.CodeStrategiesCreate), 0, hf(d.Strategy.Create))
+	rt.HandlePolicy(http.MethodGet, "/api/strategies/candidates", rbac.PermPolicy(rbac.CodeStrategiesAssign), 0, hf(d.Strategy.Candidates))
+	rt.HandlePolicy(http.MethodGet, "/api/strategies/target-candidates", rbac.PermPolicy(rbac.CodeStrategiesAssign), 0, hf(d.Strategy.TargetCandidates))
+	rt.HandlePolicy(http.MethodGet, "/api/strategies/{guid}", rbac.PermPolicy(rbac.CodeStrategiesView), 0, hf(d.Strategy.Get))
+	rt.HandlePolicy(http.MethodPatch, "/api/strategies/{guid}", rbac.PermPolicy(rbac.CodeStrategiesEdit), 0, hf(d.Strategy.Update))
+	rt.HandlePolicy(http.MethodDelete, "/api/strategies/{guid}", rbac.PermPolicy(rbac.CodeStrategiesDelete), 0, hf(d.Strategy.Delete))
+	rt.HandlePolicy(http.MethodGet, "/api/strategies/{guid}/assignments", rbac.PermPolicy(rbac.CodeStrategiesAssign), 0, hf(d.Strategy.Assignments))
+	rt.HandlePolicy(http.MethodPost, "/api/strategies/{guid}/assign", rbac.PermPolicy(rbac.CodeStrategiesAssign), 0, hf(d.Strategy.Assign))
+	rt.HandlePolicy(http.MethodPost, "/api/strategies/{guid}/unassign", rbac.PermPolicy(rbac.CodeStrategiesAssign), 0, hf(d.Strategy.Unassign))
 }

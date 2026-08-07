@@ -85,3 +85,17 @@ func (r *DeviceGroupRepo) CountRoleRefs(ctx context.Context, guid string) (int64
 		Count(&n).Error
 	return n, err
 }
+
+// DeleteWithDetachPeers 事务删除设备组并置空组内设备的 deviceGroupGuid
+// （共享知识 9：级联服务层事务显式处理，方言无关——不依赖 DB FK 的
+// ON DELETE SET NULL，SQLite 行为与 MySQL 严格一致）。
+func (r *DeviceGroupRepo) DeleteWithDetachPeers(ctx context.Context, guid string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&entity.Peer{}).
+			Where("deviceGroupGuid = ?", guid).
+			Update("deviceGroupGuid", nil).Error; err != nil {
+			return err
+		}
+		return tx.Where("guid = ?", guid).Delete(&entity.DeviceGroup{}).Error
+	})
+}

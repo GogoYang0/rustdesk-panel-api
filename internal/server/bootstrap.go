@@ -6,6 +6,8 @@ import (
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/repository"
 	authsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/auth"
 	devicesvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/device"
+	devicegroupsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/devicegroup"
+	strategysvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/strategy"
 	usersvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/user"
 )
 
@@ -28,6 +30,11 @@ type Domain struct {
 	// 设备域（T03）：心跳/系统信息端协议 + /peers 查询 + /devices 管理。
 	Heartbeat *handler.HeartbeatHandler
 	Devices   *handler.DeviceHandler
+
+	// 设备组与策略域（T04）：设备组 CRUD/accessible/strategy-targets/
+	// 加减设备 + 策略 CRUD/候选/指派。
+	DeviceGroups *handler.DeviceGroupHandler
+	Strategy     *handler.StrategyHandler
 
 	Auth *handler.AuthHandler
 	Oidc *handler.OidcHandler
@@ -90,21 +97,31 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	heartbeatH := handler.NewHeartbeatHandler(heartbeatSvc, sysinfoSvc)
 	deviceH := handler.NewDeviceHandler(authzSvc, querySvc, adminSvc)
 
+	// 设备组与策略域（T04）：设备组（accessible/ListAccessible 双源、
+	// device_count 批量计数、加减设备按 peer.id 命中）与策略（CRUD/
+	// 候选/指派清单/assign 族宿主表回写）。
+	groupSvc := devicegroupsvc.NewGroupService(authzSvc, deviceGroupRepo, peerRepo)
+	strategySvc := strategysvc.NewService(authzSvc, strategyRepo, peerRepo, users, deviceGroupRepo)
+	groupH := handler.NewDeviceGroupHandler(groupSvc)
+	strategyH := handler.NewStrategyHandler(strategySvc)
+
 	return &Domain{
-		Tokens:    tokenSvc,
-		Login:     loginSvc,
-		Tfa:       tfaSvc,
-		Passkey:   passkeySvc,
-		OIDC:      oidcSvc,
-		Cleanup:   cleanupSvc,
-		Profile:   profileSvc,
-		Avatar:    avatarSvc,
-		Rbac:      authzSvc,
-		RbacMW:    rbacMW,
-		Heartbeat: heartbeatH,
-		Devices:   deviceH,
-		Auth:      authH,
-		Oidc:      oidcH,
-		User:      userH,
+		Tokens:       tokenSvc,
+		Login:        loginSvc,
+		Tfa:          tfaSvc,
+		Passkey:      passkeySvc,
+		OIDC:         oidcSvc,
+		Cleanup:      cleanupSvc,
+		Profile:      profileSvc,
+		Avatar:       avatarSvc,
+		Rbac:         authzSvc,
+		RbacMW:       rbacMW,
+		Heartbeat:    heartbeatH,
+		Devices:      deviceH,
+		DeviceGroups: groupH,
+		Strategy:     strategyH,
+		Auth:         authH,
+		Oidc:         oidcH,
+		User:         userH,
 	}, nil
 }

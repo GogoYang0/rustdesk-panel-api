@@ -2842,6 +2842,7 @@ components:
     DeviceTargetView:
       type: object
       required: [uuid, id]
+      additionalProperties: false
       properties:
         uuid:
           type: string
@@ -2862,6 +2863,7 @@ components:
     UserTargetView:
       type: object
       required: [guid, name, is_protected]
+      additionalProperties: false
       properties:
         guid:
           type: string
@@ -2885,6 +2887,7 @@ components:
     DeviceGroupTargetView:
       type: object
       required: [guid, name]
+      additionalProperties: false
       properties:
         guid:
           type: string

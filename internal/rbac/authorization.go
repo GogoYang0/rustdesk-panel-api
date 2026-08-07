@@ -458,6 +458,20 @@ func (s *AuthorizationService) GetEffectivePermissions(ctx context.Context, user
 	}, nil
 }
 
+// ComputeScopeFor 计算 scope 而不做空 scope 拒绝（无权限码端点使用：
+// scope 为空时由调用方回退显式授权源，而非 403）。码不可分配时返回
+// 空 scope（该端点未声明权限语义，不做 Unknown permission 拒绝）。
+func (s *AuthorizationService) ComputeScopeFor(ctx context.Context, userGuid, code string) (PermissionScope, error) {
+	user, err := s.GetCurrentUser(ctx, userGuid)
+	if err != nil {
+		return PermissionScope{}, err
+	}
+	if !IsAssignable(code) {
+		return PermissionScope{DeviceGroupGuids: map[string]struct{}{}}, nil
+	}
+	return s.computeScope(ctx, user, code)
+}
+
 // AssertDeviceAccess 资源级复核：设备必须存在且落在 scope 边界内。
 // 未分组设备对 scoped 操作者一律拒绝（设计 §1.1② 决策算法 4）。
 func (s *AuthorizationService) AssertDeviceAccess(ctx context.Context, actorGuid, code, uuid string) (*DeviceRef, PermissionScope, error) {
