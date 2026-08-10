@@ -25,6 +25,12 @@ func NewConsoleAuditRepo(db *gorm.DB) *ConsoleAuditRepo {
 // CreateAudit 实现 rbac.AuditStore：AuditRecord → 实体落库
 // （guid/createdAt 由本层生成；ActorUserGuid 空串映射 NULL）。
 func (r *ConsoleAuditRepo) CreateAudit(ctx context.Context, rec rbac.AuditRecord) error {
+	return r.CreateAuditTx(r.db.WithContext(ctx), rec)
+}
+
+// CreateAuditTx CreateAudit 的事务变体：服务层把业务写与 allowed 审计
+// 落库编排在同一事务（共享知识 13 "roles/user-role 在事务内写 allowed"）。
+func (r *ConsoleAuditRepo) CreateAuditTx(tx *gorm.DB, rec rbac.AuditRecord) error {
 	var actor *string
 	if rec.ActorUserGuid != "" {
 		v := rec.ActorUserGuid
@@ -42,5 +48,5 @@ func (r *ConsoleAuditRepo) CreateAudit(ctx context.Context, rec rbac.AuditRecord
 		AfterState:    rec.AfterState,
 		RequestID:     rec.RequestID,
 	}
-	return r.Create(ctx, row)
+	return tx.Create(row).Error
 }

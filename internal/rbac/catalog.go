@@ -157,10 +157,16 @@ var catalog = []PermissionDefinition{
 }
 
 // Catalog 返回完整权限目录（GET /api/permissions 直接序列化，
-// 顺序稳定 = 定义顺序）。
+// 顺序稳定 = 定义顺序）。requires 归一为非 nil：nil 序列化为 null，
+// 违反 openapi requires:array 契约；空依赖恒为 []。
 func Catalog() []PermissionDefinition {
 	out := make([]PermissionDefinition, len(catalog))
 	copy(out, catalog)
+	for i := range out {
+		if out[i].Requires == nil {
+			out[i].Requires = []string{}
+		}
+	}
 	return out
 }
 

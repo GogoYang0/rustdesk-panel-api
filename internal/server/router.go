@@ -229,4 +229,30 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 	rt.HandlePolicy(http.MethodGet, "/api/strategies/{guid}/assignments", rbac.PermPolicy(rbac.CodeStrategiesAssign), 0, hf(d.Strategy.Assignments))
 	rt.HandlePolicy(http.MethodPost, "/api/strategies/{guid}/assign", rbac.PermPolicy(rbac.CodeStrategiesAssign), 0, hf(d.Strategy.Assign))
 	rt.HandlePolicy(http.MethodPost, "/api/strategies/{guid}/unassign", rbac.PermPolicy(rbac.CodeStrategiesAssign), 0, hf(d.Strategy.Unassign))
+
+	// ---- RBAC 域（§1.6 rbac 档）：目录只读/roles 读写走 roles.view；
+	// roles 写路径 + protection-impact 走 super administrator（roles
+	// 路线文案 "Super administrator permission required"）；用户角色
+	// 指派三端点走 Perm(roles.assign)，防护链在服务层。
+	rt.HandlePolicy(http.MethodGet, "/api/permissions", rbac.PermPolicy(rbac.CodeRolesView), 0, hf(d.RbacAPI.ListPermissions))
+	rt.HandlePolicy(http.MethodGet, "/api/permissions/me", rbac.AuthPolicy(), 0, hf(d.RbacAPI.MyPermissions))
+	rt.HandlePolicy(http.MethodGet, "/api/roles", rbac.PermPolicy(rbac.CodeRolesView), 0, hf(d.RbacAPI.ListRoles))
+	rt.HandlePolicy(http.MethodPost, "/api/roles", rbac.SuperAdminPolicy(), 0, hf(d.RbacAPI.CreateRole))
+	rt.HandlePolicy(http.MethodGet, "/api/roles/{guid}", rbac.PermPolicy(rbac.CodeRolesView), 0, hf(d.RbacAPI.GetRole))
+	rt.HandlePolicy(http.MethodPatch, "/api/roles/{guid}", rbac.SuperAdminPolicy(), 0, hf(d.RbacAPI.UpdateRole))
+	rt.HandlePolicy(http.MethodDelete, "/api/roles/{guid}", rbac.SuperAdminPolicy(), 0, hf(d.RbacAPI.DeleteRole))
+	rt.HandlePolicy(http.MethodGet, "/api/roles/{guid}/protection-impact", rbac.SuperAdminPolicy(), 0, hf(d.RbacAPI.RoleProtectionImpact))
+	rt.HandlePolicy(http.MethodGet, "/api/users/{guid}/roles", rbac.PermPolicy(rbac.CodeRolesAssign), 0, hf(d.RbacAPI.GetUserRoles))
+	rt.HandlePolicy(http.MethodGet, "/api/users/{guid}/roles/eligibility", rbac.PermPolicy(rbac.CodeRolesAssign), 0, hf(d.RbacAPI.UserRoleEligibility))
+	rt.HandlePolicy(http.MethodPut, "/api/users/{guid}/roles", rbac.PermPolicy(rbac.CodeRolesAssign), 0, hf(d.RbacAPI.ReplaceUserRoles))
+
+	// ---- 用户组域（§1.6 user-group 档）：CRUD 按
+	// view/create/edit/delete 分码；成员查询复用 view 码；成员移动走
+	// membership 码（保护账号复核在服务层 AssertUsersMutation）。
+	rt.HandlePolicy(http.MethodGet, "/api/user-groups", rbac.PermPolicy(rbac.CodeUserGroupsView), 0, hf(d.UserGroups.List))
+	rt.HandlePolicy(http.MethodPost, "/api/user-groups", rbac.PermPolicy(rbac.CodeUserGroupsCreate), 0, hf(d.UserGroups.Create))
+	rt.HandlePolicy(http.MethodPut, "/api/user-groups/{guid}", rbac.PermPolicy(rbac.CodeUserGroupsEdit), 0, hf(d.UserGroups.Update))
+	rt.HandlePolicy(http.MethodDelete, "/api/user-groups/{guid}", rbac.PermPolicy(rbac.CodeUserGroupsDelete), 0, hf(d.UserGroups.Delete))
+	rt.HandlePolicy(http.MethodGet, "/api/user-groups/{guid}/users", rbac.PermPolicy(rbac.CodeUserGroupsView), 0, hf(d.UserGroups.Members))
+	rt.HandlePolicy(http.MethodPost, "/api/user-groups/{guid}/users", rbac.PermPolicy(rbac.CodeUserGroupsMembership), 0, hf(d.UserGroups.MoveUsers))
 }
