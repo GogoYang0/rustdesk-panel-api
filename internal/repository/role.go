@@ -56,3 +56,40 @@ func (r *RoleRepo) CountAssignments(ctx context.Context, guid string) (int64, er
 		Count(&n).Error
 	return n, err
 }
+
+// CreateTx 事务内插入角色行（创建与权限码写、审计同事务，共享知识 13）。
+func (r *RoleRepo) CreateTx(tx *gorm.DB, e *entity.Role) error {
+	return tx.Create(e).Error
+}
+
+// UpdateTx 事务内全量保存角色行。
+func (r *RoleRepo) UpdateTx(tx *gorm.DB, e *entity.Role) error {
+	return tx.Save(e).Error
+}
+
+// DeleteCascadeTx 事务内级联删除角色：role_permissions、
+// user_role_assignment_device_groups、user_role_assignments、roles 行
+// 全部显式清理（方言无关，共享知识 9；关联行先删、角色行最后删）。
+func (r *RoleRepo) DeleteCascadeTx(tx *gorm.DB, guid string) error {
+	if err := tx.Where("roleGuid = ?", guid).
+		Delete(&entity.RolePermission{}).Error; err != nil {
+		return err
+	}
+	var asgGuids []string
+	if err := tx.Model(&entity.UserRoleAssignment{}).
+		Where("roleGuid = ?", guid).
+		Pluck("guid", &asgGuids).Error; err != nil {
+		return err
+	}
+	if len(asgGuids) > 0 {
+		if err := tx.Where("assignmentGuid IN ?", asgGuids).
+			Delete(&entity.UserRoleAssignmentDeviceGroup{}).Error; err != nil {
+			return err
+		}
+	}
+	if err := tx.Where("roleGuid = ?", guid).
+		Delete(&entity.UserRoleAssignment{}).Error; err != nil {
+		return err
+	}
+	return tx.Where("guid = ?", guid).Delete(&entity.Role{}).Error
+}

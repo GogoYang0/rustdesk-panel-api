@@ -7,8 +7,10 @@ import (
 	authsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/auth"
 	devicesvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/device"
 	devicegroupsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/devicegroup"
+	rbacsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/rbac"
 	strategysvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/strategy"
 	usersvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/user"
+	usergroupsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/usergroup"
 )
 
 // Domain 装配完成的认证/用户/设备域服务容器（仓储 → 服务 → handler 全链）。
@@ -35,6 +37,12 @@ type Domain struct {
 	// 加减设备 + 策略 CRUD/候选/指派。
 	DeviceGroups *handler.DeviceGroupHandler
 	Strategy     *handler.StrategyHandler
+
+	// RBAC 域与用户组域（T05）：权限目录/生效权限/角色 CRUD/保护影响/
+	// 用户角色指派 + 用户组 CRUD/成员/移动。（RbacAPI 与上方 Rbac
+	// 区分：前者为域端点集合，后者为授权决策服务。）
+	RbacAPI    *handler.RbacHandler
+	UserGroups *handler.UserGroupHandler
 
 	Auth *handler.AuthHandler
 	Oidc *handler.OidcHandler
@@ -105,6 +113,21 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	groupH := handler.NewDeviceGroupHandler(groupSvc)
 	strategyH := handler.NewStrategyHandler(strategySvc)
 
+	// RBAC 域与用户组域（T05）：角色写路径事务内显式审计（allowed
+	// before/after 快照）；用户角色指派走 AssertUserMutation 防护链；
+	// 用户组成员移动复用 AssertUsersMutation。
+	roleRepo := repository.NewRoleRepo(deps.DB)
+	rolePermRepo := repository.NewRolePermissionRepo(deps.DB)
+	assignmentRepo := repository.NewAssignmentRepo(deps.DB)
+	asgGroupRepo := repository.NewAssignmentGroupRepo(deps.DB)
+	auditRepo := repository.NewConsoleAuditRepo(deps.DB)
+
+	roleSvc := rbacsvc.NewRoleService(authzSvc, deps.DB, roleRepo, rolePermRepo, assignmentRepo, asgGroupRepo, auditRepo)
+	userRoleSvc := rbacsvc.NewUserRoleService(authzSvc, deps.DB, roleRepo, rolePermRepo, assignmentRepo, asgGroupRepo, users, deviceGroupRepo, auditRepo)
+	userGroupSvc := usergroupsvc.NewService(authzSvc, deps.DB, groups, users)
+	rbacH := handler.NewRbacHandler(authzSvc, roleSvc, userRoleSvc)
+	userGroupH := handler.NewUserGroupHandler(userGroupSvc)
+
 	return &Domain{
 		Tokens:       tokenSvc,
 		Login:        loginSvc,
@@ -120,6 +143,8 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 		Devices:      deviceH,
 		DeviceGroups: groupH,
 		Strategy:     strategyH,
+		RbacAPI:      rbacH,
+		UserGroups:   userGroupH,
 		Auth:         authH,
 		Oidc:         oidcH,
 		User:         userH,

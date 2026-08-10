@@ -51,18 +51,24 @@ func (r *RolePermissionRepo) CodesByRoles(ctx context.Context, roleGuids []strin
 // ReplaceForRole 事务整删整插角色权限码（角色更新全量重建语义）。
 func (r *RolePermissionRepo) ReplaceForRole(ctx context.Context, roleGuid string, codes []string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("roleGuid = ?", roleGuid).
-			Delete(&entity.RolePermission{}).Error; err != nil {
+		return r.ReplaceForRoleTx(tx, roleGuid, codes)
+	})
+}
+
+// ReplaceForRoleTx ReplaceForRole 的事务变体：服务层把权限码重建与
+// 事务内 allowed 审计编排在同一事务（共享知识 13）。
+func (r *RolePermissionRepo) ReplaceForRoleTx(tx *gorm.DB, roleGuid string, codes []string) error {
+	if err := tx.Where("roleGuid = ?", roleGuid).
+		Delete(&entity.RolePermission{}).Error; err != nil {
+		return err
+	}
+	for _, code := range codes {
+		row := &entity.RolePermission{RoleGuid: roleGuid, PermissionCode: code}
+		if err := tx.Create(row).Error; err != nil {
 			return err
 		}
-		for _, code := range codes {
-			row := &entity.RolePermission{RoleGuid: roleGuid, PermissionCode: code}
-			if err := tx.Create(row).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	}
+	return nil
 }
 
 // DeleteByRole 删除角色全部权限码（角色删除级联，T05）。

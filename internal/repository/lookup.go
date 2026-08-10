@@ -186,3 +186,78 @@ func (r *DeviceGroupRepo) ListByStrategy(ctx context.Context, strategyGuid strin
 	base := r.db.WithContext(ctx).Model(&entity.DeviceGroup{}).Where("strategyGuid = ?", strategyGuid)
 	return pageQuery[entity.DeviceGroup](base, "name ASC", current, pageSize)
 }
+
+// ==================== 用户组成员计数 / 成员清单 / 移动（T05 用户组域） ====================
+
+// memberCountRow user_count GROUP BY 行（显式列 tag：SELECT 结果列
+// userGroupGuid 与 GORM 推导名不同，不加 tag 会静默映射为空）。
+type memberCountRow struct {
+	UserGroupGuid string `gorm:"column:userGroupGuid"`
+	Cnt           int64  `gorm:"column:cnt"`
+}
+
+// CountByGroups 统计用户组内成员数（UserGroupView.user_count）：
+// 一次 GROUP BY 批量返回，未在结果中的 guid 计数为 0。
+func (r *UserRepo) CountByGroups(ctx context.Context, guids []string) (map[string]int64, error) {
+	out := make(map[string]int64, len(guids))
+	if len(guids) == 0 {
+		return out, nil
+	}
+	rows := make([]memberCountRow, 0, len(guids))
+	err := r.db.WithContext(ctx).Model(&entity.User{}).
+		Select("userGroupGuid, COUNT(*) AS cnt").
+		Where("userGroupGuid IN ?", guids).
+		Group("userGroupGuid").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.UserGroupGuid] = row.Cnt
+	}
+	return out, nil
+}
+
+// ListByGroup 组成员分页（公共列）：userGroupGuid 精确过滤，search
+// 非空时 LIKE 匹配 username/email（openapi 契约）；username ASC 排序。
+func (r *UserRepo) ListByGroup(ctx context.Context, groupGuid, search string, current, pageSize int) ([]entity.User, int64, error) {
+	base := r.publicSelect(ctx).Where("userGroupGuid = ?", groupGuid)
+	if search != "" {
+		pat := like(search)
+		base = base.Where("username LIKE ? OR email LIKE ?", pat, pat)
+	}
+	return pageQuery[entity.User](base, "username ASC", current, pageSize)
+}
+
+// MoveToGroup 批量把用户移入组（成员移动端点）：返回实际移动数
+// （按命中的 guid 计，调用方已校验存在性）。
+func (r *UserRepo) MoveToGroup(ctx context.Context, userGuids []string, groupGuid string) (int64, error) {
+	if len(userGuids) == 0 {
+		return 0, nil
+	}
+	res := r.db.WithContext(ctx).Model(&entity.User{}).
+		Where("guid IN ?", userGuids).
+		Update("userGroupGuid", groupGuid)
+	return res.RowsAffected, res.Error
+}
+
+// DetachMembersTx 事务内把组内全部成员回落到目标组（默认组）；
+// 返回回落成员数。toGuid 为空时置 NULL（默认组缺失的防御分支）。
+func (r *UserRepo) DetachMembersTx(tx *gorm.DB, fromGuid, toGuid string) (int64, error) {
+	var count int64
+	if err := tx.Model(&entity.User{}).
+		Where("userGroupGuid = ?", fromGuid).
+		Count(&count).Error; err != nil {
+		return 0, err
+	}
+	target := any(toGuid)
+	if toGuid == "" {
+		target = nil
+	}
+	if err := tx.Model(&entity.User{}).
+		Where("userGroupGuid = ?", fromGuid).
+		Update("userGroupGuid", target).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}

@@ -61,6 +61,14 @@ func (r *AssignmentRepo) ListByUsers(ctx context.Context, userGuids []string) (m
 // 整插新载荷（指派行 + 组关联）。
 func (r *AssignmentRepo) ReplaceAll(ctx context.Context, userGuid string, items []AssignmentWithGroups) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return r.ReplaceAllTx(tx, userGuid, items)
+	})
+}
+
+// ReplaceAllTx ReplaceAll 的事务变体：服务层把替换与事务内 allowed
+// 审计编排在同一事务（共享知识 13）。
+func (r *AssignmentRepo) ReplaceAllTx(tx *gorm.DB, userGuid string, items []AssignmentWithGroups) error {
+	{
 		var oldGuids []string
 		if err := tx.Model(&entity.UserRoleAssignment{}).
 			Where("userGuid = ?", userGuid).
@@ -90,7 +98,17 @@ func (r *AssignmentRepo) ReplaceAll(ctx context.Context, userGuid string, items 
 			}
 		}
 		return nil
-	})
+	}
+}
+
+// ListByRole 角色的全部指派（角色删除前全量快照审计，T05）。
+func (r *AssignmentRepo) ListByRole(ctx context.Context, roleGuid string) ([]entity.UserRoleAssignment, error) {
+	out := make([]entity.UserRoleAssignment, 0)
+	err := r.db.WithContext(ctx).
+		Where("roleGuid = ?", roleGuid).
+		Order("createdAt ASC").
+		Find(&out).Error
+	return out, err
 }
 
 // DeleteByRole 删除角色的全部指派（含关联组；角色删除级联，T05）。

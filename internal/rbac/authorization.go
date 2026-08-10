@@ -32,6 +32,11 @@ func ErrNotFoundErr(msg string) *StatusError {
 	return &StatusError{Status: http.StatusNotFound, Message: msg}
 }
 
+// ErrConflictMsg 构造 409 业务错误（角色/用户组重名冲突）。
+func ErrConflictMsg(msg string) *StatusError {
+	return &StatusError{Status: http.StatusConflict, Message: msg}
+}
+
 // ErrUnauthorizedMsg 构造 401 业务错误（如被禁用户固定文案）。
 func ErrUnauthorizedMsg(msg string) *StatusError {
 	return &StatusError{Status: http.StatusUnauthorized, Message: msg}
