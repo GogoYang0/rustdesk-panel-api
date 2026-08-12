@@ -13,6 +13,28 @@ import (
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/rbac"
 )
 
+// 路由授权策略档位（设计 §1.6；与 rbac.PolicyKind 一一对应，
+// 以字符串暴露供三方一致性测试与运维内省比对）。
+const (
+	PolicyPublic     = "public"      // 公开白名单（无 JWT）
+	PolicyAuth       = "auth"        // 仅 JWT（handler 内按需状态复核）
+	PolicyPerm       = "perm"        // JWT + 权限码决策（查库）
+	PolicyAdminGuard = "admin_guard" // JWT + 管理员守卫
+	PolicySuperAdmin = "super_admin" // JWT + super administrator
+)
+
+// Route 描述一条已注册路由的授权声明。
+//
+// 注册期由 Handle/HandlePolicy（以及系统、设备协议端点的显式登记）
+// 写入 Router.routes，经 Routes() 只读访问；是"路由表 ↔ openapi.yaml ↔
+// 设计 §1.6 档位表"三方一致性测试与运维内省的数据源。
+type Route struct {
+	Method  string // HTTP 方法
+	Pattern string // 路径模板（{param} 段），与 openapi paths 一一对应
+	Policy  string // 授权策略档位（PolicyPublic 等常量）
+	Code    string // PolicyPerm 对应的权限码；其余档位为空串
+}
+
 // Router 装配路由表与横切链。
 //
 // 全局链：RequestID → Recover → AccessLog → CORS（共享知识 9 前四层）；
@@ -27,6 +49,7 @@ type Router struct {
 	rbacMW        *rbac.Middleware
 	handler       http.Handler
 	domain        *Domain
+	routes        []Route
 }
 
 // RouterDeps 路由装配依赖。
@@ -80,6 +103,18 @@ func (rt *Router) Handler() http.Handler { return rt.handler }
 // Domain 返回装配好的认证域容器（main 启动 cron 清理用；未装配时 nil）。
 func (rt *Router) Domain() *Domain { return rt.domain }
 
+// record 登记一条路由授权声明（注册期写入，与 mux 注册同处调用）。
+func (rt *Router) record(r Route) { rt.routes = append(rt.routes, r) }
+
+// Routes 返回已注册路由授权声明（注册顺序）的拷贝，供
+// "路由表 ↔ openapi ↔ 设计档位表"三方一致性测试与运维内省使用。
+// 返回切片为拷贝，调用方修改不影响路由器内部状态。
+func (rt *Router) Routes() []Route {
+	out := make([]Route, len(rt.routes))
+	copy(out, rt.routes)
+	return out
+}
+
 // Handle 注册一条路由。
 //
 //	method   HTTP 方法（net/http 方法路由）
@@ -87,6 +122,11 @@ func (rt *Router) Domain() *Domain { return rt.domain }
 //	public   true 时跳过 JWTAuth（公开白名单）
 //	perMinute>0 时启用 per-IP per-route 限流（次/分钟）
 func (rt *Router) Handle(method, pattern string, public bool, perMinute int, h http.Handler) {
+	policy := PolicyAuth
+	if public {
+		policy = PolicyPublic
+	}
+	rt.record(Route{Method: method, Pattern: pattern, Policy: policy})
 	if !public {
 		h = middleware.JWTAuth(rt.validator)(h)
 	}
@@ -113,6 +153,8 @@ func hf(h func(http.ResponseWriter, *http.Request)) http.Handler {
 // 包装顺序（执行序）：限流 → JWTAuth → 策略决策 → handler——策略
 // 中间件必须在 JWTAuth 内层，IdentityFromContext 才能读到已注入身份。
 func (rt *Router) HandlePolicy(method, pattern string, policy rbac.Policy, perMinute int, h http.Handler) {
+	// 注册声明（三方一致性数据源）：默认仅认证档，按 Kind 细化。
+	declared := Route{Method: method, Pattern: pattern, Policy: PolicyAuth}
 	if perMinute > 0 {
 		h = rt.limiter.Wrap(pattern, perMinute, h)
 	}
@@ -121,16 +163,23 @@ func (rt *Router) HandlePolicy(method, pattern string, policy rbac.Policy, perMi
 		panic("server: HandlePolicy requires rbac middleware (assemble Domain first)")
 	}
 	switch policy.Kind {
+	case rbac.PolicyPublic:
+		declared.Policy = PolicyPublic
 	case rbac.PolicyPerm:
+		declared.Policy = PolicyPerm
+		declared.Code = policy.Code
 		h = rt.rbacMW.RequirePermission(policy.Code)(h)
 	case rbac.PolicyAdminGuard:
+		declared.Policy = PolicyAdminGuard
 		h = rt.rbacMW.RequireAdminGuard()(h)
 	case rbac.PolicySuperAdmin:
+		declared.Policy = PolicySuperAdmin
 		h = rt.rbacMW.RequireSuperAdmin()(h)
 	}
 	if policy.Kind != rbac.PolicyPublic {
 		h = middleware.JWTAuth(rt.validator)(h)
 	}
+	rt.record(declared)
 	rt.mux.Handle(method+" "+pattern, h)
 }
 
@@ -142,6 +191,7 @@ func (rt *Router) DeviceRateLimit(pattern string, perMinute int, h http.Handler)
 
 // registerSystem 注册系统端点（M0 契约保持不变）。
 func (rt *Router) registerSystem() {
+	rt.record(Route{Method: http.MethodGet, Pattern: "/api/healthz", Policy: PolicyPublic})
 	rt.mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{
 			"status":  "ok",
@@ -188,9 +238,12 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 
 	// ---- 设备端协议（公开，§1.4）：不引入设备 token；设备维度限流
 	// （tracker=id→uuid→IP 回退）以显式组合方式前置，不叠加 per-IP
-	// 限流。直挂 mux：绕过 Handle 的 per-IP 限流与 JWT 包装。
+	// 限流。直挂 mux：绕过 Handle 的 per-IP 限流与 JWT 包装；
+	// 授权声明（公开档）显式登记，维持路由表完整性。
+	rt.record(Route{Method: http.MethodPost, Pattern: "/api/heartbeat", Policy: PolicyPublic})
 	rt.mux.Handle(http.MethodPost+" /api/heartbeat",
 		rt.DeviceRateLimit("/api/heartbeat", 10, hf(d.Heartbeat.Heartbeat)))
+	rt.record(Route{Method: http.MethodPost, Pattern: "/api/sysinfo", Policy: PolicyPublic})
 	rt.mux.Handle(http.MethodPost+" /api/sysinfo",
 		rt.DeviceRateLimit("/api/sysinfo", 5, hf(d.Heartbeat.Sysinfo)))
 
