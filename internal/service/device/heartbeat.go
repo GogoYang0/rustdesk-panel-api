@@ -5,13 +5,13 @@ package device
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"time"
 
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/dto"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/entity"
+	"github.com/rustdesk-panel/rustdesk-panel-api/internal/jsonutil"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/repository"
 )
 
@@ -105,7 +105,9 @@ func (s *HeartbeatService) Handle(ctx context.Context, req dto.HeartbeatRequest)
 		return dto.HeartbeatResponse{}, err
 	}
 	if strat != nil && strat.UpdatedAt.UnixMilli() > req.ModifiedAt {
-		resp.Strategy = &dto.StrategyOptionsPayload{ConfigOptions: ParseConfigOptions(strat.ConfigOptions)}
+		// configOptions 解析走单源（M3 批复 #1，共享知识 21）：
+		// 与 strategy 域同一函数同一语义，禁止本地再实现。
+		resp.Strategy = &dto.StrategyOptionsPayload{ConfigOptions: jsonutil.ParseConfigOptions(strat.ConfigOptions)}
 		resp.ModifiedAt = strat.UpdatedAt.UnixMilli()
 	}
 	return resp, nil
@@ -178,23 +180,4 @@ func (s *HeartbeatService) strategyByGuid(ctx context.Context, guid *string) (*e
 		return nil, err
 	}
 	return strat, nil
-}
-
-// ParseConfigOptions 解析 strategies.configOptions（TEXT JSON 串）为
-// API 契约的 Record<string,string>（设计 §1.1④）。空串 → {}；
-// 解析失败或非 map[string]string 形态（脏数据防御）→ {}，
-// 保证 heartbeat 响应恒符合 openapi config_options 契约。
-func ParseConfigOptions(raw string) map[string]string {
-	out := map[string]string{}
-	if raw == "" {
-		return out
-	}
-	var m map[string]string
-	if err := json.Unmarshal([]byte(raw), &m); err != nil {
-		return out
-	}
-	if m == nil {
-		return out
-	}
-	return m
 }

@@ -30,8 +30,17 @@ type Config struct {
 	JWTSecret     string `env:"JWT_SECRET" envDefault:"rustdesk-panel-dev-secret"`
 	JWTExpiryDays int    `env:"JWT_EXPIRY_DAYS" envDefault:"30"`
 
-	// 数据目录（头像等静态文件根）。
+	// 数据目录（头像等静态文件根；M3 亦承载 nexus 产物 DATA_DIR/nexus）。
 	DataDir string `env:"DATA_DIR" envDefault:"./data"`
+
+	// M3 服务器域（设计事实③/共享知识 19）：中继节点清单，JSON 数组
+	// [{id,name,url,token}]。空串=无节点（合法，服务器域列表为空）；
+	// 格式/取值校验（id 唯一、url 纯 origin、token≥32、≤100 节点）在
+	// servermgmt 包启动装配时执行，失败 fail-fast 终止进程（T06）。
+	RustdeskNodes string `env:"RUSTDESK_NODES" envDefault:""`
+
+	// M3 更新检查渠道（设计事实④/共享知识 19）：stable | nightly。
+	UpdateChannel string `env:"UPDATE_CHANNEL" envDefault:"stable"`
 
 	// WebAuthn Relying Party 配置。
 	WebAuthnRPID    string   `env:"WEBAUTHN_RP_ID" envDefault:"localhost"`
@@ -63,6 +72,9 @@ func Load() (Config, error) {
 	}
 	if cfg.DBDriver != "mysql" && cfg.DBDriver != "sqlite" {
 		return Config{}, errors.New("config: DB_DRIVER must be mysql or sqlite")
+	}
+	if cfg.UpdateChannel != "stable" && cfg.UpdateChannel != "nightly" {
+		return Config{}, errors.New("config: UPDATE_CHANNEL must be stable or nightly")
 	}
 	return cfg, nil
 }

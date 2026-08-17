@@ -61,22 +61,3 @@ func TestDisconnectStore(t *testing.T) {
 		t.Errorf("pending dev-1 after all confirmed = %v, want empty", got)
 	}
 }
-
-// TestParseConfigOptions configOptions 解析契约：空串 → {}；
-// 正常 map 解析；非 string 值/坏 JSON（脏数据防御）→ {}。
-func TestParseConfigOptions(t *testing.T) {
-	if got := ParseConfigOptions(""); len(got) != 0 {
-		t.Errorf("empty raw = %v, want empty map", got)
-	}
-	got := ParseConfigOptions(`{"access_ip":"10.0.0.9","custom-rustdesk-port":"21116"}`)
-	want := map[string]string{"access_ip": "10.0.0.9", "custom-rustdesk-port": "21116"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("parsed = %v, want %v", got, want)
-	}
-	if got := ParseConfigOptions(`{"allow_log_anonymous":true}`); len(got) != 0 {
-		t.Errorf("non-string value = %v, want empty map（防御脏数据）", got)
-	}
-	if got := ParseConfigOptions("not-json"); len(got) != 0 {
-		t.Errorf("bad json = %v, want empty map", got)
-	}
-}

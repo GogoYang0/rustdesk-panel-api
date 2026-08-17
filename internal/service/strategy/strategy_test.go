@@ -1,6 +1,7 @@
-// strategy_test.go 策略域服务单测：config_options 脏数据防御解析、
-// target_guids 去重、部分成功拆分 reason 固定文案、DeleteWithDetach
-// 幂等与三处置空（T04 验收单测项）。
+// strategy_test.go 策略域服务单测：target_guids 去重、部分成功拆分
+// reason 固定文案、DeleteWithDetach 幂等与三处置空（T04 验收单测项）。
+// config_options 脏数据解析回归已单源至 internal/jsonutil
+// （M3 批复 #1，共享知识 21），本包不再本地测试。
 package strategy
 
 import (
@@ -14,39 +15,6 @@ import (
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/repository"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/testutil"
 )
-
-// TestParseConfigOptions 脏数据防御：空串/坏 JSON/非 object/含非 string
-// 值均安全降级；恒返回非 nil（StrategyView.config_options 契约）。
-func TestParseConfigOptions(t *testing.T) {
-	cases := []struct {
-		name string
-		raw  string
-		want map[string]string
-	}{
-		{"empty", "", map[string]string{}},
-		{"bad json", "not-json{", map[string]string{}},
-		{"array", `["a","b"]`, map[string]string{}},
-		{"null", `null`, map[string]string{}},
-		{"string values", `{"a":"1","b":""}`, map[string]string{"a": "1", "b": ""}},
-		{"mixed drop non-string", `{"a":"x","b":true,"c":1,"d":null}`, map[string]string{"a": "x"}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ParseConfigOptions(tc.raw)
-			if got == nil {
-				t.Fatal("ParseConfigOptions returned nil, want non-nil map")
-			}
-			if len(got) != len(tc.want) {
-				t.Fatalf("len = %d (%v), want %d", len(got), got, len(tc.want))
-			}
-			for k, v := range tc.want {
-				if got[k] != v {
-					t.Errorf("config[%q] = %q, want %q", k, got[k], v)
-				}
-			}
-		})
-	}
-}
 
 // TestDedupTargets 去重保持首次出现顺序（assign/unassign 契约）。
 func TestDedupTargets(t *testing.T) {

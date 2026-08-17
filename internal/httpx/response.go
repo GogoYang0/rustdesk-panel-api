@@ -34,6 +34,27 @@ func WriteText(w http.ResponseWriter, status int, text string) {
 	_, _ = w.Write([]byte(text))
 }
 
+// WriteBinary 二进制下载出口（M3 扩展点⑥）：application/octet-stream +
+// Content-Disposition: attachment——nexus 产物下载、avatars、静态资源
+// 三类复用。filename 必须由调用方先行白名单过滤（剥离 CR/LF/引号，
+// M3 批复 #8：不偏离响应形状的前提下消除 header 注入面）。
+func WriteBinary(w http.ResponseWriter, filename string, content []byte) {
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
+}
+
+// WriteRawString 原始字符串直出（M3 扩展点⑥）：兼容怪癖第一件——
+// GET /api/ab 空数据返回字符串 'null'（非 JSON null 字面量的双引号
+// 字符串之外的纯文本形态）。contentType 由调用方指定（legacy ab 为
+// text/plain；若调用方需要 JSON 语义请改用 WriteJSON）。
+func WriteRawString(w http.ResponseWriter, status int, contentType, body string) {
+	w.Header().Set("Content-Type", contentType)
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(body))
+}
+
 // Fail 通用错误出口：message 原样透出（string / []string / map）。
 func Fail(w http.ResponseWriter, status int, message any) {
 	writeEnvelope(w, status, message)
