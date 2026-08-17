@@ -1,11 +1,12 @@
 // 外部测试包：全栈路由装配依赖 internal/testutil/apptest（其又依赖
 // internal/server），内部测试包会构成 import cycle，故用 server_test 挂载。
 //
-// 本文件是 M2 收口（T06）的三方一致性回归：
+// 本文件是三方一致性回归（M2 T06 建立，M3 T01 起扩至全量口径）：
 //
 //	路由表（Router.Routes 注册声明）
 //	↔ openapi.yaml（operation 集合 + security 公开性 + operationId 唯一）
-//	↔ 设计档位表（§2.1 认证域 / §1.4 设备协议 / §1.6 M2 各域，本文件硬编码）
+//	↔ 设计档位表（§2.1 认证域 / §1.4 设备协议 / §1.6 M2 各域 /
+//	  M3 设计 §1.3 策略总表，本文件硬编码）
 //
 // 任何一侧单点改动——新增或删除端点、漏标 security、策略档位漂移、
 // 权限码改名、复制 operationId——都会被另外两方指认。
@@ -24,9 +25,11 @@ import (
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/testutil/apptest"
 )
 
-// m2ExpectedOperations 是 M2 收口的契约规模门槛：openapi.yaml 必须
-// 恰好覆盖 68 个 operation（53 条路径 × 各自动词）。
-const m2ExpectedOperations = 68
+// expectedOperations 是契约规模门槛：openapi.yaml 必须恰好覆盖
+// 164 个 operation（M2 收口 68 + M3 T01 骨架 96；M3 设计 §1.3 策略
+// 总表逐行勾稽，其中 settings 域设计合计栏"6"为笔误、实为 9——
+// 本常量以逐行清单为准）。
+const expectedOperations = 164
 
 // m2SecuredOpenapiOperations openapi.yaml 中声明了 security 块的 operation
 // 集合（契约现状约定）：仅 M1 认证域的 16 个 JWT 端点标注
@@ -165,6 +168,131 @@ func expectedRouteTable() routeTable {
 	tb.add(http.MethodGet, "/api/user-groups/{guid}/users", server.PolicyPerm, "user_groups.view")
 	tb.add(http.MethodPost, "/api/user-groups/{guid}/users", server.PolicyPerm, "user_groups.membership")
 
+	// —— M3 用户域（设计 §1.3 user 档；M1 已有 5 条 me/avatar 不重复
+	// 列出）：PATCH /users/{guid} 按字段分权故仅 Auth；invite/verify/
+	// accept 公开与 Perm(users.create) 分档 ——
+	tb.add(http.MethodGet, "/api/users", server.PolicyPerm, "users.view")
+	tb.add(http.MethodPost, "/api/users", server.PolicyPerm, "users.create")
+	tb.add(http.MethodPost, "/api/users/invite", server.PolicyPerm, "users.create")
+	tb.add(http.MethodPost, "/api/invitations/verify", server.PolicyPublic, "")
+	tb.add(http.MethodPost, "/api/invitations/accept", server.PolicyPublic, "")
+	tb.add(http.MethodPatch, "/api/users/batch/status", server.PolicyPerm, "users.status")
+	tb.add(http.MethodPatch, "/api/users/batch/security", server.PolicyPerm, "users.security")
+	tb.add(http.MethodDelete, "/api/users/batch/sessions", server.PolicyPerm, "users.force_logout")
+	tb.add(http.MethodGet, "/api/users/{guid}", server.PolicyPerm, "users.view")
+	tb.add(http.MethodPatch, "/api/users/{guid}", server.PolicyAuth, "")
+	tb.add(http.MethodDelete, "/api/users/{guid}", server.PolicyPerm, "users.delete")
+	tb.add(http.MethodPatch, "/api/users/{guid}/security", server.PolicyPerm, "users.security")
+	tb.add(http.MethodDelete, "/api/users/{guid}/sessions", server.PolicyPerm, "users.force_logout")
+	tb.add(http.MethodGet, "/api/admin/users", server.PolicyPerm, "users.view")
+
+	// —— M3 通讯录域（设计 §1.3 ab 档）：24 端点仅 Auth（owner/规则
+	// 在 service 内复核）；share-candidates/shared add/share 写路径
+	// Perm(address_books.share)；shared edit 路径 Perm(address_books.edit)；
+	// rules 查询 Perm(address_books.view) ——
+	tb.add(http.MethodGet, "/api/ab", server.PolicyAuth, "")
+	tb.add(http.MethodPost, "/api/ab", server.PolicyAuth, "")
+	tb.add(http.MethodPost, "/api/ab/settings", server.PolicyAuth, "")
+	tb.add(http.MethodGet, "/api/ab/personal", server.PolicyAuth, "")
+	tb.add(http.MethodPost, "/api/ab/personal", server.PolicyAuth, "")
+	tb.add(http.MethodGet, "/api/ab/custom/profiles", server.PolicyAuth, "")
+	tb.add(http.MethodPost, "/api/ab/custom/add", server.PolicyAuth, "")
+	tb.add(http.MethodPut, "/api/ab/custom/update/profile", server.PolicyAuth, "")
+	tb.add(http.MethodDelete, "/api/ab/custom", server.PolicyAuth, "")
+	tb.add(http.MethodGet, "/api/ab/shared/profiles", server.PolicyAuth, "")
+	tb.add(http.MethodPost, "/api/ab/shared/profiles", server.PolicyAuth, "")
+	tb.add(http.MethodGet, "/api/ab/shared/list", server.PolicyAuth, "")
+	tb.add(http.MethodGet, "/api/ab/shared/{guid}/access", server.PolicyAuth, "")
+	tb.add(http.MethodGet, "/api/ab/shared/{guid}/share-candidates", server.PolicyPerm, "address_books.share")
+	tb.add(http.MethodPost, "/api/ab/shared/add", server.PolicyPerm, "address_books.share")
+	tb.add(http.MethodPut, "/api/ab/shared/update/profile", server.PolicyPerm, "address_books.edit")
+	tb.add(http.MethodDelete, "/api/ab/shared", server.PolicyPerm, "address_books.edit")
+	tb.add(http.MethodGet, "/api/ab/peers", server.PolicyAuth, "")
+	tb.add(http.MethodPost, "/api/ab/peers", server.PolicyAuth, "")
+	tb.add(http.MethodGet, "/api/ab/tags/{guid}", server.PolicyAuth, "")
+	tb.add(http.MethodPost, "/api/ab/tags/{guid}", server.PolicyAuth, "")
+	tb.add(http.MethodPost, "/api/ab/peer/add/{guid}", server.PolicyAuth, "")
+	tb.add(http.MethodPut, "/api/ab/peer/update/{guid}", server.PolicyAuth, "")
+	tb.add(http.MethodDelete, "/api/ab/peer/{guid}", server.PolicyAuth, "")
+	tb.add(http.MethodPost, "/api/ab/tag/add/{guid}", server.PolicyAuth, "")
+	tb.add(http.MethodPut, "/api/ab/tag/rename/{guid}", server.PolicyAuth, "")
+	tb.add(http.MethodPut, "/api/ab/tag/update/{guid}", server.PolicyAuth, "")
+	tb.add(http.MethodDelete, "/api/ab/tag/{guid}", server.PolicyAuth, "")
+	tb.add(http.MethodGet, "/api/ab/rules", server.PolicyPerm, "address_books.view")
+	tb.add(http.MethodPost, "/api/ab/rule", server.PolicyPerm, "address_books.share")
+	tb.add(http.MethodPatch, "/api/ab/rule", server.PolicyPerm, "address_books.share")
+	tb.add(http.MethodDelete, "/api/ab/rules", server.PolicyPerm, "address_books.share")
+
+	// —— M3 审计域（设计 §1.3 audit 档，★ 退出标准载体）：上报单数
+	// Public + per-IP 50/min；active 走 devices.disconnect（scope∩
+	// can_disconnect）；查询复数 audit.view；conn note PATCH SuperAdmin ——
+	tb.add(http.MethodPost, "/api/audit/conn", server.PolicyPublic, "")
+	tb.add(http.MethodPost, "/api/audit/file", server.PolicyPublic, "")
+	tb.add(http.MethodPost, "/api/audit/alarm", server.PolicyPublic, "")
+	tb.add(http.MethodGet, "/api/audits/conn/active", server.PolicyPerm, "devices.disconnect")
+	tb.add(http.MethodGet, "/api/audits/conn", server.PolicyPerm, "audit.view")
+	tb.add(http.MethodPatch, "/api/audits/conn/{id}", server.PolicySuperAdmin, "")
+	tb.add(http.MethodGet, "/api/audits/file", server.PolicyPerm, "audit.view")
+	tb.add(http.MethodGet, "/api/audits/alarm", server.PolicyPerm, "audit.view")
+	tb.add(http.MethodGet, "/api/audits/console", server.PolicyPerm, "audit.view")
+
+	// —— M3 仪表盘域：双端点 SuperAdmin ——
+	tb.add(http.MethodGet, "/api/dashboard", server.PolicySuperAdmin, "")
+	tb.add(http.MethodGet, "/api/dashboard/trends", server.PolicySuperAdmin, "")
+
+	// —— M3 服务器域（设计 §1.3 servers 档）：view/disconnect/config/
+	// control/ban 五码分档 ——
+	tb.add(http.MethodGet, "/api/servers", server.PolicyPerm, "servers.view")
+	tb.add(http.MethodGet, "/api/servers/{node}/peers", server.PolicyPerm, "servers.view")
+	tb.add(http.MethodGet, "/api/servers/{node}/sessions", server.PolicyPerm, "servers.view")
+	tb.add(http.MethodDelete, "/api/servers/{node}/sessions/{uuid}", server.PolicyPerm, "servers.disconnect")
+	tb.add(http.MethodGet, "/api/servers/{node}/services/{service}/config", server.PolicyPerm, "servers.config")
+	tb.add(http.MethodPut, "/api/servers/{node}/services/{service}/config", server.PolicyPerm, "servers.config")
+	tb.add(http.MethodGet, "/api/servers/{node}/services/{service}/logs", server.PolicyPerm, "servers.view")
+	tb.add(http.MethodPost, "/api/servers/{node}/services/{service}/{action}", server.PolicyPerm, "servers.control")
+	tb.add(http.MethodGet, "/api/servers/{node}/bans", server.PolicyPerm, "servers.ban")
+	tb.add(http.MethodPut, "/api/servers/{node}/bans", server.PolicyPerm, "servers.ban")
+
+	// —— M3 nexus 域：全部 Auth（构建归属 user 校验在 service 层）——
+	tb.add(http.MethodPost, "/api/nexus/auth/login", server.PolicyAuth, "")
+	tb.add(http.MethodGet, "/api/nexus/auth/status", server.PolicyAuth, "")
+	tb.add(http.MethodGet, "/api/nexus/auth/bind-status", server.PolicyAuth, "")
+	tb.add(http.MethodDelete, "/api/nexus/auth/bind", server.PolicyAuth, "")
+	tb.add(http.MethodPost, "/api/nexus/builds", server.PolicyAuth, "")
+	tb.add(http.MethodGet, "/api/nexus/builds", server.PolicyAuth, "")
+	tb.add(http.MethodDelete, "/api/nexus/builds/{uuid}", server.PolicyAuth, "")
+	tb.add(http.MethodGet, "/api/nexus/builds/{uuid}/files", server.PolicyAuth, "")
+	tb.add(http.MethodGet, "/api/nexus/builds/{uuid}/files/{filename}", server.PolicyAuth, "")
+
+	// —— M3 设置域：frontend 公开；general/smtp/ldap AdminGuard；
+	// smtp/ldap test 限流 5/min（限流不改变授权档位）——
+	tb.add(http.MethodGet, "/api/settings/frontend", server.PolicyPublic, "")
+	tb.add(http.MethodGet, "/api/settings/general", server.PolicyAdminGuard, "")
+	tb.add(http.MethodPut, "/api/settings/general", server.PolicyAdminGuard, "")
+	tb.add(http.MethodGet, "/api/settings/smtp", server.PolicyAdminGuard, "")
+	tb.add(http.MethodPut, "/api/settings/smtp", server.PolicyAdminGuard, "")
+	tb.add(http.MethodPost, "/api/settings/smtp/test", server.PolicyAdminGuard, "")
+	tb.add(http.MethodGet, "/api/settings/ldap", server.PolicyAdminGuard, "")
+	tb.add(http.MethodPut, "/api/settings/ldap", server.PolicyAdminGuard, "")
+	tb.add(http.MethodPost, "/api/settings/ldap/test", server.PolicyAdminGuard, "")
+
+	// —— M3 OIDC 提供者域：全 AdminGuard ——
+	tb.add(http.MethodGet, "/api/oidc-providers", server.PolicyAdminGuard, "")
+	tb.add(http.MethodPost, "/api/oidc-providers", server.PolicyAdminGuard, "")
+	tb.add(http.MethodPatch, "/api/oidc-providers/sort", server.PolicyAdminGuard, "")
+	tb.add(http.MethodGet, "/api/oidc-providers/{guid}", server.PolicyAdminGuard, "")
+	tb.add(http.MethodPatch, "/api/oidc-providers/{guid}", server.PolicyAdminGuard, "")
+	tb.add(http.MethodDelete, "/api/oidc-providers/{guid}", server.PolicyAdminGuard, "")
+	tb.add(http.MethodPatch, "/api/oidc-providers/{guid}/toggle", server.PolicyAdminGuard, "")
+	tb.add(http.MethodPost, "/api/oidc-providers/{guid}/test", server.PolicyAdminGuard, "")
+
+	// —— M3 更新检查：AdminGuard ——
+	tb.add(http.MethodGet, "/api/update-check", server.PolicyAdminGuard, "")
+
+	// —— M3 静态资源（设计 §1.3 静态档）：SPA 兜底与 /files 公开 ——
+	tb.add(http.MethodGet, "/", server.PolicyPublic, "")
+	tb.add(http.MethodGet, "/files/{path}", server.PolicyPublic, "")
+
 	return tb
 }
 
@@ -209,8 +337,8 @@ func opHasSecurity(op *openapi3.Operation) bool {
 // 误删端点或复制 operationId 都会在此失败。
 func TestM2OperationCountRegression(t *testing.T) {
 	ops := specOperations(loadM2Spec(t))
-	if len(ops) != m2ExpectedOperations {
-		t.Fatalf("openapi operation count = %d, want %d", len(ops), m2ExpectedOperations)
+	if len(ops) != expectedOperations {
+		t.Fatalf("openapi operation count = %d, want %d", len(ops), expectedOperations)
 	}
 	seen := make(map[string]string, len(ops))
 	for key, op := range ops {
@@ -248,14 +376,14 @@ func TestM2RouterOpenapiThreeWayConsistency(t *testing.T) {
 		}
 		actual[key] = r
 	}
-	if len(actual) != m2ExpectedOperations {
-		t.Errorf("router registered routes = %d, want %d", len(actual), m2ExpectedOperations)
+	if len(actual) != expectedOperations {
+		t.Errorf("router registered routes = %d, want %d", len(actual), expectedOperations)
 	}
 
 	// ---- 设计 ↔ 路由：端点集合相等，档位与权限码逐一比对 ----
 	expected := expectedRouteTable()
-	if len(expected) != m2ExpectedOperations {
-		t.Fatalf("design route table = %d entries, want %d", len(expected), m2ExpectedOperations)
+	if len(expected) != expectedOperations {
+		t.Fatalf("design route table = %d entries, want %d", len(expected), expectedOperations)
 	}
 	var missing, drifted, undeclared []string
 	for key, want := range expected {
@@ -290,8 +418,8 @@ func TestM2RouterOpenapiThreeWayConsistency(t *testing.T) {
 
 	// ---- openapi ↔ 路由：operation 集合双向覆盖 ----
 	ops := specOperations(loadM2Spec(t))
-	if len(ops) != m2ExpectedOperations {
-		t.Fatalf("openapi operation count = %d, want %d", len(ops), m2ExpectedOperations)
+	if len(ops) != expectedOperations {
+		t.Fatalf("openapi operation count = %d, want %d", len(ops), expectedOperations)
 	}
 	var noRoute, noSpec []string
 	for key := range ops {

@@ -3,6 +3,7 @@ package server
 import (
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"gorm.io/gorm"
@@ -11,6 +12,7 @@ import (
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/httpx"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/middleware"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/rbac"
+	"github.com/rustdesk-panel/rustdesk-panel-api/internal/static"
 )
 
 // 路由授权策略档位（设计 §1.6；与 rbac.PolicyKind 一一对应，
@@ -75,6 +77,9 @@ func NewRouter(deps RouterDeps) *Router {
 		validator:     deps.Validator,
 	}
 	rt.registerSystem()
+	// 静态资源（M3 扩展点①）不依赖 Domain：embed SPA 与 /files 均为
+	// 本地文件服务，DB 未注入（契约冒烟）时同样可用。
+	rt.registerStatic(deps.Config.DataDir)
 	if deps.DB != nil {
 		domain, err := assembleDomain(deps)
 		if err != nil {
@@ -201,6 +206,31 @@ func (rt *Router) registerSystem() {
 	})
 }
 
+// registerStatic 注册静态资源路由（M3 扩展点①，设计事实⑨）：
+//
+//	GET /               —— SPA 兜底（embed dist；排除 /api /files /avatars）
+//	GET /files/{path}   —— nexus 产物（DATA_DIR/nexus + safeJoin）
+//
+// 公开档显式登记（heartbeat/sysinfo 同款先例）；mux 模式用 net/http
+// 尾部通配 {path...}（多段匹配），契约侧 Route.Pattern 保持与
+// openapi paths 一致的 {path} 单段形态——三方一致性以声明键为准。
+func (rt *Router) registerStatic(dataDir string) {
+	rt.record(Route{Method: http.MethodGet, Pattern: "/", Policy: PolicyPublic})
+	rt.mux.Handle(http.MethodGet+" /", static.SPAHandler())
+	rt.record(Route{Method: http.MethodGet, Pattern: "/files/{path}", Policy: PolicyPublic})
+	rt.mux.Handle(http.MethodGet+" /files/{path...}", static.FilesHandler(filepath.Join(dataDir, "nexus")))
+}
+
+// notImplemented M3-T01 契约骨架占位 handler：横切链（限流/JWT/RBAC
+// 决策）按注册档位完整生效，handler 体为 501；T03~T07 逐域替换为
+// 真实实现（占位路由存在的意义是让"契约↔路由表↔设计档位表"三方
+// 一致性在本里程碑内全程可校验）。
+func notImplemented(route string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		httpx.Fail(w, http.StatusNotImplemented, "Not implemented in M3 T01: "+route)
+	})
+}
+
 // registerDomainRoutes 注册认证域路由（§2.1 #1~#19）。
 // 公开白名单：login、login-options、passkey/auth/*、oidc/*（共享知识 9）；
 // 限流参数表：login 5、login-options 20、passkey/auth 10、oidc/auth 5、
@@ -308,4 +338,128 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 	rt.HandlePolicy(http.MethodDelete, "/api/user-groups/{guid}", rbac.PermPolicy(rbac.CodeUserGroupsDelete), 0, hf(d.UserGroups.Delete))
 	rt.HandlePolicy(http.MethodGet, "/api/user-groups/{guid}/users", rbac.PermPolicy(rbac.CodeUserGroupsView), 0, hf(d.UserGroups.Members))
 	rt.HandlePolicy(http.MethodPost, "/api/user-groups/{guid}/users", rbac.PermPolicy(rbac.CodeUserGroupsMembership), 0, hf(d.UserGroups.MoveUsers))
+
+	// ---- M3 契约骨架（T01）：96 operation 按设计 §1.3 档位表注册，
+	// handler 体为 501 占位（notImplemented），T03~T07 逐域替换。
+	rt.registerM3Stubs()
+}
+
+// registerM3Stubs 注册 M3 全部新增端点（96 = 14 user + 32 ab + 9 audit +
+// 2 dashboard + 10 servers + 9 nexus + 9 settings + 8 oidc + 1 update +
+// 2 静态，其中静态两条已由 registerStatic 登记）。档位与限流参数严格
+// 对齐设计 §1.3 策略总表——三方一致性测试以本注册声明为路由侧数据源。
+func (rt *Router) registerM3Stubs() {
+	stub := notImplemented
+
+	// ---- 用户域（M1 已有 5 条 me/avatar 端点不重复注册）----
+	rt.HandlePolicy(http.MethodGet, "/api/users", rbac.PermPolicy(rbac.CodeUsersView), 0, stub("GET /api/users"))
+	rt.HandlePolicy(http.MethodPost, "/api/users", rbac.PermPolicy(rbac.CodeUsersCreate), 0, stub("POST /api/users"))
+	rt.HandlePolicy(http.MethodPost, "/api/users/invite", rbac.PermPolicy(rbac.CodeUsersCreate), 0, stub("POST /api/users/invite"))
+	rt.HandlePolicy(http.MethodPost, "/api/invitations/verify", rbac.PublicPolicy(), 0, stub("POST /api/invitations/verify"))
+	rt.HandlePolicy(http.MethodPost, "/api/invitations/accept", rbac.PublicPolicy(), 0, stub("POST /api/invitations/accept"))
+	rt.HandlePolicy(http.MethodPatch, "/api/users/batch/status", rbac.PermPolicy(rbac.CodeUsersStatus), 0, stub("PATCH /api/users/batch/status"))
+	rt.HandlePolicy(http.MethodPatch, "/api/users/batch/security", rbac.PermPolicy(rbac.CodeUsersSecurity), 0, stub("PATCH /api/users/batch/security"))
+	rt.HandlePolicy(http.MethodDelete, "/api/users/batch/sessions", rbac.PermPolicy(rbac.CodeUsersForceLogout), 0, stub("DELETE /api/users/batch/sessions"))
+	rt.HandlePolicy(http.MethodGet, "/api/users/{guid}", rbac.PermPolicy(rbac.CodeUsersView), 0, stub("GET /api/users/{guid}"))
+	rt.HandlePolicy(http.MethodPatch, "/api/users/{guid}", rbac.AuthPolicy(), 0, stub("PATCH /api/users/{guid}"))
+	rt.HandlePolicy(http.MethodDelete, "/api/users/{guid}", rbac.PermPolicy(rbac.CodeUsersDelete), 0, stub("DELETE /api/users/{guid}"))
+	rt.HandlePolicy(http.MethodPatch, "/api/users/{guid}/security", rbac.PermPolicy(rbac.CodeUsersSecurity), 0, stub("PATCH /api/users/{guid}/security"))
+	rt.HandlePolicy(http.MethodDelete, "/api/users/{guid}/sessions", rbac.PermPolicy(rbac.CodeUsersForceLogout), 0, stub("DELETE /api/users/{guid}/sessions"))
+	rt.HandlePolicy(http.MethodGet, "/api/admin/users", rbac.PermPolicy(rbac.CodeUsersView), 0, stub("GET /api/admin/users"))
+
+	// ---- 通讯录域（24 端点仅 Auth；8 端点按 share/edit/view 分码）----
+	rt.HandlePolicy(http.MethodGet, "/api/ab", rbac.AuthPolicy(), 0, stub("GET /api/ab"))
+	rt.HandlePolicy(http.MethodPost, "/api/ab", rbac.AuthPolicy(), 0, stub("POST /api/ab"))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/settings", rbac.AuthPolicy(), 0, stub("POST /api/ab/settings"))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/personal", rbac.AuthPolicy(), 0, stub("GET /api/ab/personal"))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/personal", rbac.AuthPolicy(), 0, stub("POST /api/ab/personal"))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/custom/profiles", rbac.AuthPolicy(), 0, stub("GET /api/ab/custom/profiles"))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/custom/add", rbac.AuthPolicy(), 0, stub("POST /api/ab/custom/add"))
+	rt.HandlePolicy(http.MethodPut, "/api/ab/custom/update/profile", rbac.AuthPolicy(), 0, stub("PUT /api/ab/custom/update/profile"))
+	rt.HandlePolicy(http.MethodDelete, "/api/ab/custom", rbac.AuthPolicy(), 0, stub("DELETE /api/ab/custom"))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/shared/profiles", rbac.AuthPolicy(), 0, stub("GET /api/ab/shared/profiles"))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/shared/profiles", rbac.AuthPolicy(), 0, stub("POST /api/ab/shared/profiles"))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/shared/list", rbac.AuthPolicy(), 0, stub("GET /api/ab/shared/list"))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/shared/{guid}/access", rbac.AuthPolicy(), 0, stub("GET /api/ab/shared/{guid}/access"))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/shared/{guid}/share-candidates", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, stub("GET /api/ab/shared/{guid}/share-candidates"))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/shared/add", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, stub("POST /api/ab/shared/add"))
+	rt.HandlePolicy(http.MethodPut, "/api/ab/shared/update/profile", rbac.PermPolicy(rbac.CodeAddressBooksEdit), 0, stub("PUT /api/ab/shared/update/profile"))
+	rt.HandlePolicy(http.MethodDelete, "/api/ab/shared", rbac.PermPolicy(rbac.CodeAddressBooksEdit), 0, stub("DELETE /api/ab/shared"))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/peers", rbac.AuthPolicy(), 0, stub("GET /api/ab/peers"))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/peers", rbac.AuthPolicy(), 0, stub("POST /api/ab/peers"))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/tags/{guid}", rbac.AuthPolicy(), 0, stub("GET /api/ab/tags/{guid}"))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/tags/{guid}", rbac.AuthPolicy(), 0, stub("POST /api/ab/tags/{guid}"))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/peer/add/{guid}", rbac.AuthPolicy(), 0, stub("POST /api/ab/peer/add/{guid}"))
+	rt.HandlePolicy(http.MethodPut, "/api/ab/peer/update/{guid}", rbac.AuthPolicy(), 0, stub("PUT /api/ab/peer/update/{guid}"))
+	rt.HandlePolicy(http.MethodDelete, "/api/ab/peer/{guid}", rbac.AuthPolicy(), 0, stub("DELETE /api/ab/peer/{guid}"))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/tag/add/{guid}", rbac.AuthPolicy(), 0, stub("POST /api/ab/tag/add/{guid}"))
+	rt.HandlePolicy(http.MethodPut, "/api/ab/tag/rename/{guid}", rbac.AuthPolicy(), 0, stub("PUT /api/ab/tag/rename/{guid}"))
+	rt.HandlePolicy(http.MethodPut, "/api/ab/tag/update/{guid}", rbac.AuthPolicy(), 0, stub("PUT /api/ab/tag/update/{guid}"))
+	rt.HandlePolicy(http.MethodDelete, "/api/ab/tag/{guid}", rbac.AuthPolicy(), 0, stub("DELETE /api/ab/tag/{guid}"))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/rules", rbac.PermPolicy(rbac.CodeAddressBooksView), 0, stub("GET /api/ab/rules"))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/rule", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, stub("POST /api/ab/rule"))
+	rt.HandlePolicy(http.MethodPatch, "/api/ab/rule", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, stub("PATCH /api/ab/rule"))
+	rt.HandlePolicy(http.MethodDelete, "/api/ab/rules", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, stub("DELETE /api/ab/rules"))
+
+	// ---- 审计域（★ 上报单数路径 Public + per-IP 50/min，查询复数）----
+	rt.HandlePolicy(http.MethodPost, "/api/audit/conn", rbac.PublicPolicy(), 50, stub("POST /api/audit/conn"))
+	rt.HandlePolicy(http.MethodPost, "/api/audit/file", rbac.PublicPolicy(), 50, stub("POST /api/audit/file"))
+	rt.HandlePolicy(http.MethodPost, "/api/audit/alarm", rbac.PublicPolicy(), 50, stub("POST /api/audit/alarm"))
+	rt.HandlePolicy(http.MethodGet, "/api/audits/conn/active", rbac.PermPolicy(rbac.CodeDevicesDisconnect), 0, stub("GET /api/audits/conn/active"))
+	rt.HandlePolicy(http.MethodGet, "/api/audits/conn", rbac.PermPolicy(rbac.CodeAuditView), 0, stub("GET /api/audits/conn"))
+	rt.HandlePolicy(http.MethodPatch, "/api/audits/conn/{id}", rbac.SuperAdminPolicy(), 0, stub("PATCH /api/audits/conn/{id}"))
+	rt.HandlePolicy(http.MethodGet, "/api/audits/file", rbac.PermPolicy(rbac.CodeAuditView), 0, stub("GET /api/audits/file"))
+	rt.HandlePolicy(http.MethodGet, "/api/audits/alarm", rbac.PermPolicy(rbac.CodeAuditView), 0, stub("GET /api/audits/alarm"))
+	rt.HandlePolicy(http.MethodGet, "/api/audits/console", rbac.PermPolicy(rbac.CodeAuditView), 0, stub("GET /api/audits/console"))
+
+	// ---- 仪表盘域（双端点 SuperAdmin）----
+	rt.HandlePolicy(http.MethodGet, "/api/dashboard", rbac.SuperAdminPolicy(), 0, stub("GET /api/dashboard"))
+	rt.HandlePolicy(http.MethodGet, "/api/dashboard/trends", rbac.SuperAdminPolicy(), 0, stub("GET /api/dashboard/trends"))
+
+	// ---- 服务器域（经 agent 转发，五码分档）----
+	rt.HandlePolicy(http.MethodGet, "/api/servers", rbac.PermPolicy(rbac.CodeServersView), 0, stub("GET /api/servers"))
+	rt.HandlePolicy(http.MethodGet, "/api/servers/{node}/peers", rbac.PermPolicy(rbac.CodeServersView), 0, stub("GET /api/servers/{node}/peers"))
+	rt.HandlePolicy(http.MethodGet, "/api/servers/{node}/sessions", rbac.PermPolicy(rbac.CodeServersView), 0, stub("GET /api/servers/{node}/sessions"))
+	rt.HandlePolicy(http.MethodDelete, "/api/servers/{node}/sessions/{uuid}", rbac.PermPolicy(rbac.CodeServersDisconnect), 0, stub("DELETE /api/servers/{node}/sessions/{uuid}"))
+	rt.HandlePolicy(http.MethodGet, "/api/servers/{node}/services/{service}/config", rbac.PermPolicy(rbac.CodeServersConfig), 0, stub("GET /api/servers/{node}/services/{service}/config"))
+	rt.HandlePolicy(http.MethodPut, "/api/servers/{node}/services/{service}/config", rbac.PermPolicy(rbac.CodeServersConfig), 0, stub("PUT /api/servers/{node}/services/{service}/config"))
+	rt.HandlePolicy(http.MethodGet, "/api/servers/{node}/services/{service}/logs", rbac.PermPolicy(rbac.CodeServersView), 0, stub("GET /api/servers/{node}/services/{service}/logs"))
+	rt.HandlePolicy(http.MethodPost, "/api/servers/{node}/services/{service}/{action}", rbac.PermPolicy(rbac.CodeServersControl), 0, stub("POST /api/servers/{node}/services/{service}/{action}"))
+	rt.HandlePolicy(http.MethodGet, "/api/servers/{node}/bans", rbac.PermPolicy(rbac.CodeServersBan), 0, stub("GET /api/servers/{node}/bans"))
+	rt.HandlePolicy(http.MethodPut, "/api/servers/{node}/bans", rbac.PermPolicy(rbac.CodeServersBan), 0, stub("PUT /api/servers/{node}/bans"))
+
+	// ---- nexus 域（绑定与构建；POST builds=201 / DELETE=204 特例在 handler 层）----
+	rt.HandlePolicy(http.MethodPost, "/api/nexus/auth/login", rbac.AuthPolicy(), 0, stub("POST /api/nexus/auth/login"))
+	rt.HandlePolicy(http.MethodGet, "/api/nexus/auth/status", rbac.AuthPolicy(), 0, stub("GET /api/nexus/auth/status"))
+	rt.HandlePolicy(http.MethodGet, "/api/nexus/auth/bind-status", rbac.AuthPolicy(), 0, stub("GET /api/nexus/auth/bind-status"))
+	rt.HandlePolicy(http.MethodDelete, "/api/nexus/auth/bind", rbac.AuthPolicy(), 0, stub("DELETE /api/nexus/auth/bind"))
+	rt.HandlePolicy(http.MethodPost, "/api/nexus/builds", rbac.AuthPolicy(), 0, stub("POST /api/nexus/builds"))
+	rt.HandlePolicy(http.MethodGet, "/api/nexus/builds", rbac.AuthPolicy(), 0, stub("GET /api/nexus/builds"))
+	rt.HandlePolicy(http.MethodDelete, "/api/nexus/builds/{uuid}", rbac.AuthPolicy(), 0, stub("DELETE /api/nexus/builds/{uuid}"))
+	rt.HandlePolicy(http.MethodGet, "/api/nexus/builds/{uuid}/files", rbac.AuthPolicy(), 0, stub("GET /api/nexus/builds/{uuid}/files"))
+	rt.HandlePolicy(http.MethodGet, "/api/nexus/builds/{uuid}/files/{filename}", rbac.AuthPolicy(), 0, stub("GET /api/nexus/builds/{uuid}/files/{filename}"))
+
+	// ---- 设置域（frontend 公开；general/smtp/ldap Admin；test 5/min）----
+	rt.HandlePolicy(http.MethodGet, "/api/settings/frontend", rbac.PublicPolicy(), 0, stub("GET /api/settings/frontend"))
+	rt.HandlePolicy(http.MethodGet, "/api/settings/general", rbac.AdminGuardPolicy(), 0, stub("GET /api/settings/general"))
+	rt.HandlePolicy(http.MethodPut, "/api/settings/general", rbac.AdminGuardPolicy(), 0, stub("PUT /api/settings/general"))
+	rt.HandlePolicy(http.MethodGet, "/api/settings/smtp", rbac.AdminGuardPolicy(), 0, stub("GET /api/settings/smtp"))
+	rt.HandlePolicy(http.MethodPut, "/api/settings/smtp", rbac.AdminGuardPolicy(), 0, stub("PUT /api/settings/smtp"))
+	rt.HandlePolicy(http.MethodPost, "/api/settings/smtp/test", rbac.AdminGuardPolicy(), 5, stub("POST /api/settings/smtp/test"))
+	rt.HandlePolicy(http.MethodGet, "/api/settings/ldap", rbac.AdminGuardPolicy(), 0, stub("GET /api/settings/ldap"))
+	rt.HandlePolicy(http.MethodPut, "/api/settings/ldap", rbac.AdminGuardPolicy(), 0, stub("PUT /api/settings/ldap"))
+	rt.HandlePolicy(http.MethodPost, "/api/settings/ldap/test", rbac.AdminGuardPolicy(), 5, stub("POST /api/settings/ldap/test"))
+
+	// ---- OIDC 提供者域（全 Admin）----
+	rt.HandlePolicy(http.MethodGet, "/api/oidc-providers", rbac.AdminGuardPolicy(), 0, stub("GET /api/oidc-providers"))
+	rt.HandlePolicy(http.MethodPost, "/api/oidc-providers", rbac.AdminGuardPolicy(), 0, stub("POST /api/oidc-providers"))
+	rt.HandlePolicy(http.MethodPatch, "/api/oidc-providers/sort", rbac.AdminGuardPolicy(), 0, stub("PATCH /api/oidc-providers/sort"))
+	rt.HandlePolicy(http.MethodGet, "/api/oidc-providers/{guid}", rbac.AdminGuardPolicy(), 0, stub("GET /api/oidc-providers/{guid}"))
+	rt.HandlePolicy(http.MethodPatch, "/api/oidc-providers/{guid}", rbac.AdminGuardPolicy(), 0, stub("PATCH /api/oidc-providers/{guid}"))
+	rt.HandlePolicy(http.MethodDelete, "/api/oidc-providers/{guid}", rbac.AdminGuardPolicy(), 0, stub("DELETE /api/oidc-providers/{guid}"))
+	rt.HandlePolicy(http.MethodPatch, "/api/oidc-providers/{guid}/toggle", rbac.AdminGuardPolicy(), 0, stub("PATCH /api/oidc-providers/{guid}/toggle"))
+	rt.HandlePolicy(http.MethodPost, "/api/oidc-providers/{guid}/test", rbac.AdminGuardPolicy(), 0, stub("POST /api/oidc-providers/{guid}/test"))
+
+	// ---- 更新检查（Admin）----
+	rt.HandlePolicy(http.MethodGet, "/api/update-check", rbac.AdminGuardPolicy(), 0, stub("GET /api/update-check"))
 }

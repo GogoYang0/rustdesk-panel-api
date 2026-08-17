@@ -16,6 +16,38 @@ const (
 	CookieAuthScopes = "cookieAuth.Scopes"
 )
 
+// Defines values for AbPeersQueryRequestTagMode.
+const (
+	AbPeersQueryRequestTagModeIntersection AbPeersQueryRequestTagMode = "intersection"
+	AbPeersQueryRequestTagModeUnion        AbPeersQueryRequestTagMode = "union"
+)
+
+// Defines values for AbRuleRule.
+const (
+	AbRuleRuleN1 AbRuleRule = 1
+	AbRuleRuleN2 AbRuleRule = 2
+	AbRuleRuleN3 AbRuleRule = 3
+)
+
+// Defines values for AbRuleUpdateRequestRule.
+const (
+	AbRuleUpdateRequestRuleN1 AbRuleUpdateRequestRule = 1
+	AbRuleUpdateRequestRuleN2 AbRuleUpdateRequestRule = 2
+	AbRuleUpdateRequestRuleN3 AbRuleUpdateRequestRule = 3
+)
+
+// Defines values for AbRuleUpsertRequestRule.
+const (
+	AbRuleUpsertRequestRuleN1 AbRuleUpsertRequestRule = 1
+	AbRuleUpsertRequestRuleN2 AbRuleUpsertRequestRule = 2
+	AbRuleUpsertRequestRuleN3 AbRuleUpsertRequestRule = 3
+)
+
+// Defines values for AbSettingsMaxPeerOneAb.
+const (
+	AbSettingsMaxPeerOneAbN0 AbSettingsMaxPeerOneAb = 0
+)
+
 // Defines values for AssignRequestTargetType.
 const (
 	AssignRequestTargetTypeDevice      AssignRequestTargetType = "device"
@@ -27,6 +59,13 @@ const (
 const (
 	AssignmentDtoScopeTypeDeviceGroup AssignmentDtoScopeType = "device_group"
 	AssignmentDtoScopeTypeGlobal      AssignmentDtoScopeType = "global"
+)
+
+// Defines values for BatchStatusRequestStatus.
+const (
+	BatchStatusRequestStatusMinus1 BatchStatusRequestStatus = -1
+	BatchStatusRequestStatusN0     BatchStatusRequestStatus = 0
+	BatchStatusRequestStatusN1     BatchStatusRequestStatus = 1
 )
 
 // Defines values for DeviceStatusUpdateRequestStatus.
@@ -42,6 +81,12 @@ const (
 	SelfTarget       EligibilityRowReasonCode = "self_target"
 	SuperAdminTarget EligibilityRowReasonCode = "super_admin_target"
 	TargetProtected  EligibilityRowReasonCode = "target_protected"
+)
+
+// Defines values for FileAuditReportType.
+const (
+	FileAuditReportTypeN0 FileAuditReportType = 0
+	FileAuditReportTypeN1 FileAuditReportType = 1
 )
 
 // Defines values for LoginRequestType.
@@ -64,6 +109,39 @@ const (
 	LoginResponseTypeEmailCheck LoginResponseType = "email_check"
 )
 
+// Defines values for NexusBuildViewStatus.
+const (
+	Building  NexusBuildViewStatus = "building"
+	Cancelled NexusBuildViewStatus = "cancelled"
+	Completed NexusBuildViewStatus = "completed"
+	Failed    NexusBuildViewStatus = "failed"
+	Pending   NexusBuildViewStatus = "pending"
+)
+
+// Defines values for NexusGenerateDtoArch.
+const (
+	Aarch64 NexusGenerateDtoArch = "aarch64"
+	X86     NexusGenerateDtoArch = "x86"
+	X8664   NexusGenerateDtoArch = "x86_64"
+)
+
+// Defines values for NexusGenerateDtoOs.
+const (
+	Windows NexusGenerateDtoOs = "windows"
+)
+
+// Defines values for OidcProviderDtoType.
+const (
+	OidcProviderDtoTypeOauth2 OidcProviderDtoType = "oauth2"
+	OidcProviderDtoTypeOidc   OidcProviderDtoType = "oidc"
+)
+
+// Defines values for OidcProviderUpsertType.
+const (
+	OidcProviderUpsertTypeOauth2 OidcProviderUpsertType = "oauth2"
+	OidcProviderUpsertTypeOidc   OidcProviderUpsertType = "oidc"
+)
+
 // Defines values for PermissionDefinitionScope.
 const (
 	PermissionDefinitionScopeDeviceGroup PermissionDefinitionScope = "device_group"
@@ -76,11 +154,50 @@ const (
 	ReplaceRolesRequestAssignmentsScopeTypeGlobal      ReplaceRolesRequestAssignmentsScopeType = "global"
 )
 
+// Defines values for SharedBookRowRule.
+const (
+	SharedBookRowRuleN1 SharedBookRowRule = 1
+	SharedBookRowRuleN2 SharedBookRowRule = 2
+	SharedBookRowRuleN3 SharedBookRowRule = 3
+)
+
+// Defines values for UpdateUserRequestStatus.
+const (
+	UpdateUserRequestStatusMinus1 UpdateUserRequestStatus = -1
+	UpdateUserRequestStatusN0     UpdateUserRequestStatus = 0
+	UpdateUserRequestStatusN1     UpdateUserRequestStatus = 1
+)
+
 // Defines values for UserRolesResultEffectiveScope.
 const (
 	UserRolesResultEffectiveScopeDeviceGroup UserRolesResultEffectiveScope = "device_group"
 	UserRolesResultEffectiveScopeGlobal      UserRolesResultEffectiveScope = "global"
 	UserRolesResultEffectiveScopeNone        UserRolesResultEffectiveScope = "none"
+)
+
+// Defines values for ListAddressBookPeersParamsTagMode.
+const (
+	ListAddressBookPeersParamsTagModeIntersection ListAddressBookPeersParamsTagMode = "intersection"
+	ListAddressBookPeersParamsTagModeUnion        ListAddressBookPeersParamsTagMode = "union"
+)
+
+// Defines values for ListAdminUsersParamsIsAdmin.
+const (
+	ListAdminUsersParamsIsAdminN0 ListAdminUsersParamsIsAdmin = "0"
+	ListAdminUsersParamsIsAdminN1 ListAdminUsersParamsIsAdmin = "1"
+)
+
+// Defines values for ListConsoleAuditsParamsResult.
+const (
+	Allowed ListConsoleAuditsParamsResult = "allowed"
+	Denied  ListConsoleAuditsParamsResult = "denied"
+)
+
+// Defines values for GetDashboardTrendsParamsRange.
+const (
+	N30d GetDashboardTrendsParamsRange = "30d"
+	N7d  GetDashboardTrendsParamsRange = "7d"
+	N90d GetDashboardTrendsParamsRange = "90d"
 )
 
 // Defines values for ListDevicesParamsStatus.
@@ -103,8 +220,40 @@ const (
 
 // Defines values for ListPeersParamsIsOnline.
 const (
-	ListPeersParamsIsOnlineN0 ListPeersParamsIsOnline = "0"
-	ListPeersParamsIsOnlineN1 ListPeersParamsIsOnline = "1"
+	N0 ListPeersParamsIsOnline = "0"
+	N1 ListPeersParamsIsOnline = "1"
+)
+
+// Defines values for GetServerServiceConfigParamsService.
+const (
+	GetServerServiceConfigParamsServiceHbbr GetServerServiceConfigParamsService = "hbbr"
+	GetServerServiceConfigParamsServiceHbbs GetServerServiceConfigParamsService = "hbbs"
+)
+
+// Defines values for UpdateServerServiceConfigParamsService.
+const (
+	UpdateServerServiceConfigParamsServiceHbbr UpdateServerServiceConfigParamsService = "hbbr"
+	UpdateServerServiceConfigParamsServiceHbbs UpdateServerServiceConfigParamsService = "hbbs"
+)
+
+// Defines values for GetServerServiceLogsParamsService.
+const (
+	GetServerServiceLogsParamsServiceHbbr GetServerServiceLogsParamsService = "hbbr"
+	GetServerServiceLogsParamsServiceHbbs GetServerServiceLogsParamsService = "hbbs"
+)
+
+// Defines values for RunServerServiceActionParamsService.
+const (
+	RunServerServiceActionParamsServiceHbbr RunServerServiceActionParamsService = "hbbr"
+	RunServerServiceActionParamsServiceHbbs RunServerServiceActionParamsService = "hbbs"
+)
+
+// Defines values for RunServerServiceActionParamsAction.
+const (
+	Apply   RunServerServiceActionParamsAction = "apply"
+	Restart RunServerServiceActionParamsAction = "restart"
+	Start   RunServerServiceActionParamsAction = "start"
+	Stop    RunServerServiceActionParamsAction = "stop"
 )
 
 // Defines values for StrategyTargetCandidatesParamsTargetType.
@@ -119,6 +268,129 @@ const (
 	StrategyAssignmentsParamsTargetTypeDeviceGroup StrategyAssignmentsParamsTargetType = "device_group"
 	StrategyAssignmentsParamsTargetTypeUser        StrategyAssignmentsParamsTargetType = "user"
 )
+
+// AbPeer 地址簿 peer 行（findOrCreatePeer 自动建）。
+type AbPeer struct {
+	AddressBookGuid *string  `json:"address_book_guid,omitempty"`
+	Alias           *string  `json:"alias,omitempty"`
+	DeviceId        string   `json:"device_id"`
+	Guid            string   `json:"guid"`
+	Hash            *string  `json:"hash,omitempty"`
+	Note            *string  `json:"note,omitempty"`
+	Password        *string  `json:"password,omitempty"`
+	Tags            []string `json:"tags"`
+}
+
+// AbPeerList defines model for AbPeerList.
+type AbPeerList struct {
+	Data  []AbPeer `json:"data"`
+	Total int      `json:"total"`
+}
+
+// AbPeerUpsertRequest 新增/更新 peer（客户端兼容字段 username/hostname/platform 等保留解析部分忽略）； PUT 时 tags 全量替换。
+type AbPeerUpsertRequest struct {
+	Alias    *string   `json:"alias,omitempty"`
+	Hash     *string   `json:"hash,omitempty"`
+	Id       string    `json:"id"`
+	Note     *string   `json:"note,omitempty"`
+	Password *string   `json:"password,omitempty"`
+	Tags     *[]string `json:"tags,omitempty"`
+}
+
+// AbPeersQueryRequest POST peers 查询（ab 必填；tags 过滤 union/intersection 两模式）。
+type AbPeersQueryRequest struct {
+	Ab      string                      `json:"ab"`
+	Alias   *string                     `json:"alias,omitempty"`
+	Id      *string                     `json:"id,omitempty"`
+	TagMode *AbPeersQueryRequestTagMode `json:"tag_mode,omitempty"`
+	Tags    *[]string                   `json:"tags,omitempty"`
+}
+
+// AbPeersQueryRequestTagMode defines model for AbPeersQueryRequest.TagMode.
+type AbPeersQueryRequestTagMode string
+
+// AbRule 规则行（targetUserId/targetGroupId 双空=everyone）。
+type AbRule struct {
+	AddressBookGuid string     `json:"address_book_guid"`
+	Guid            string     `json:"guid"`
+	Rule            AbRuleRule `json:"rule"`
+	TargetGroupId   *string    `json:"target_group_id,omitempty"`
+	TargetUserId    *string    `json:"target_user_id,omitempty"`
+}
+
+// AbRuleRule defines model for AbRule.Rule.
+type AbRuleRule int
+
+// AbRuleList 规则列表（address_books.view）。
+type AbRuleList struct {
+	Data []AbRule `json:"data"`
+}
+
+// AbRuleUpdateRequest 更新规则（guid=规则 guid）。
+type AbRuleUpdateRequest struct {
+	// Guid 规则 guid
+	Guid string                  `json:"guid"`
+	Rule AbRuleUpdateRequestRule `json:"rule"`
+}
+
+// AbRuleUpdateRequestRule defines model for AbRuleUpdateRequest.Rule.
+type AbRuleUpdateRequestRule int
+
+// AbRuleUpsertRequest 建规则（guid=地址簿；user/group 互斥 409；重复 409 This rule already exists）。
+type AbRuleUpsertRequest struct {
+	// Group 目标组 guid（与 user 互斥）
+	Group *string `json:"group,omitempty"`
+
+	// Guid 地址簿 guid
+	Guid string                  `json:"guid"`
+	Rule AbRuleUpsertRequestRule `json:"rule"`
+
+	// User 目标用户 guid（与 group 互斥）
+	User *string `json:"user,omitempty"`
+}
+
+// AbRuleUpsertRequestRule defines model for AbRuleUpsertRequest.Rule.
+type AbRuleUpsertRequestRule int
+
+// AbSettings 兼容怪癖——恒返回 max_peer_one_ab=0。
+type AbSettings struct {
+	MaxPeerOneAb AbSettingsMaxPeerOneAb `json:"max_peer_one_ab"`
+}
+
+// AbSettingsMaxPeerOneAb defines model for AbSettings.MaxPeerOneAb.
+type AbSettingsMaxPeerOneAb int
+
+// AbTag 地址簿标签（color 为 ARGB uint）。
+type AbTag struct {
+	Color int32  `json:"color"`
+	Guid  string `json:"guid"`
+	Name  string `json:"name"`
+}
+
+// AbTagList 书内标签列表（tag_colors 为 JSON 编码串，客户端硬依赖）。
+type AbTagList struct {
+	Data      []AbTag `json:"data"`
+	TagColors *string `json:"tag_colors,omitempty"`
+}
+
+// AbTagRenameRequest defines model for AbTagRenameRequest.
+type AbTagRenameRequest struct {
+	Name string `json:"name"`
+}
+
+// AbTagUpsertRequest 新增标签（同名 409）/更新颜色。
+type AbTagUpsertRequest struct {
+	Color int32  `json:"color"`
+	Name  string `json:"name"`
+}
+
+// AbTagsReplaceRequest 全量替换书内标签。
+type AbTagsReplaceRequest struct {
+	Tags []struct {
+		Color int32  `json:"color"`
+		Name  string `json:"name"`
+	} `json:"tags"`
+}
 
 // AccessibleGroupPage defines model for AccessibleGroupPage.
 type AccessibleGroupPage struct {
@@ -136,6 +408,67 @@ type AccessibleGroupView struct {
 // AddDevicesResult defines model for AddDevicesResult.
 type AddDevicesResult struct {
 	AddedCount int `json:"added_count"`
+}
+
+// AddressBookRef 地址簿引用（personal 幂等取/建）。
+type AddressBookRef struct {
+	Guid string `json:"guid"`
+	Name string `json:"name"`
+}
+
+// AdminUserPage 管理员用户分页（10 过滤参数；行含 is_protected/strategy_name/role_names）。
+type AdminUserPage struct {
+	Data []struct {
+		CreatedAt   *time.Time `json:"created_at,omitempty"`
+		DisplayName *string    `json:"display_name,omitempty"`
+		Email       *string    `json:"email,omitempty"`
+		Guid        string     `json:"guid"`
+
+		// IsAdmin admin 行 role_names 追加 'Super Admin'
+		IsAdmin       bool     `json:"is_admin"`
+		IsProtected   bool     `json:"is_protected"`
+		Name          string   `json:"name"`
+		Note          *string  `json:"note,omitempty"`
+		RoleNames     []string `json:"role_names"`
+		Status        int      `json:"status"`
+		StrategyName  *string  `json:"strategy_name,omitempty"`
+		UserGroupGuid *string  `json:"user_group_guid,omitempty"`
+		UserGroupName *string  `json:"user_group_name,omitempty"`
+		Username      string   `json:"username"`
+	} `json:"data"`
+	Total int `json:"total"`
+}
+
+// AlarmAuditPage defines model for AlarmAuditPage.
+type AlarmAuditPage struct {
+	Data  []AlarmAuditRow `json:"data"`
+	Total int             `json:"total"`
+}
+
+// AlarmAuditReport 告警审计上报（Public + per-IP 50/min；UNIQUE(device_id,nonce) 幂等）。
+type AlarmAuditReport struct {
+	ConnAuditRef *string `json:"conn_audit_ref,omitempty"`
+	ConnId       *string `json:"conn_id,omitempty"`
+	Id           string  `json:"id"`
+
+	// Info JSON 字符串原样落库
+	Info  string  `json:"info"`
+	Nonce *string `json:"nonce,omitempty"`
+	Typ   int     `json:"typ"`
+	Uuid  string  `json:"uuid"`
+}
+
+// AlarmAuditRow defines model for AlarmAuditRow.
+type AlarmAuditRow struct {
+	ConnAuditRef *string    `json:"conn_audit_ref,omitempty"`
+	ConnId       *string    `json:"conn_id,omitempty"`
+	CreatedAt    *time.Time `json:"created_at,omitempty"`
+	DeviceId     string     `json:"device_id"`
+	DeviceUuid   string     `json:"device_uuid"`
+	Id           int        `json:"id"`
+	Info         string     `json:"info"`
+	Nonce        *string    `json:"nonce,omitempty"`
+	Typ          int        `json:"typ"`
 }
 
 // AssignError defines model for AssignError.
@@ -175,10 +508,235 @@ type AvatarResponse struct {
 	Avatar string `json:"avatar"`
 }
 
+// BatchResult 批量部分成功结果；操作者快照与库内状态漂移时整批 409。
+type BatchResult struct {
+	Failed []struct {
+		Guid   string `json:"guid"`
+		Reason string `json:"reason"`
+	} `json:"failed"`
+	FailedCount    int      `json:"failedCount"`
+	Succeeded      []string `json:"succeeded"`
+	SucceededCount int      `json:"succeededCount"`
+	Total          int      `json:"total"`
+}
+
+// BatchSecurityRequest 批量安全设置（写 users.info JSON；统一撤 token）。
+type BatchSecurityRequest struct {
+	EmailVerification *bool    `json:"email_verification,omitempty"`
+	Guids             []string `json:"guids"`
+
+	// NewPassword 管理员重置口令；不重置已登记 2FA/通行密钥
+	NewPassword *string `json:"new_password,omitempty"`
+	TfaEnforce  *bool   `json:"tfa_enforce,omitempty"`
+}
+
+// BatchSessionsRequest defines model for BatchSessionsRequest.
+type BatchSessionsRequest struct {
+	Guids []string `json:"guids"`
+}
+
+// BatchStatusRequest 批量启停（UNVERIFIED=-1/DISABLED=0/ACTIVE=1）。
+type BatchStatusRequest struct {
+	Guids  []string                 `json:"guids"`
+	Status BatchStatusRequestStatus `json:"status"`
+}
+
+// BatchStatusRequestStatus defines model for BatchStatusRequest.Status.
+type BatchStatusRequestStatus int
+
+// BookGuidsRequest defines model for BookGuidsRequest.
+type BookGuidsRequest struct {
+	Guids []string `json:"guids"`
+}
+
+// BookPaginationRequest 分页查询（current/pageSize/name/note）。
+type BookPaginationRequest struct {
+	Current  *int    `json:"current,omitempty"`
+	Name     *string `json:"name,omitempty"`
+	Note     *string `json:"note,omitempty"`
+	PageSize *int    `json:"pageSize,omitempty"`
+}
+
+// BuildFiles 构建产物清单（files JSON 落库形态展开）。
+type BuildFiles struct {
+	Files []struct {
+		Filename string `json:"filename"`
+		Size     *int   `json:"size,omitempty"`
+	} `json:"files"`
+}
+
 // ChangePasswordRequest defines model for ChangePasswordRequest.
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"current_password"`
 	NewPassword     string `json:"new_password"`
+}
+
+// ConnActiveList 活跃连接列表（devices.disconnect 权限 + device_group scope 过滤）。
+type ConnActiveList struct {
+	Data []ConnActiveRow `json:"data"`
+}
+
+// ConnActiveRow 活跃连接行（can_disconnect = scope ∩ active）。
+type ConnActiveRow struct {
+	Action        string     `json:"action"`
+	CanDisconnect bool       `json:"can_disconnect"`
+	ClosedAt      *time.Time `json:"closed_at,omitempty"`
+	ConnId        string     `json:"conn_id"`
+	DeviceId      string     `json:"device_id"`
+	DeviceUuid    string     `json:"device_uuid"`
+	EstablishedAt *time.Time `json:"established_at,omitempty"`
+	Id            int        `json:"id"`
+	Ip            *string    `json:"ip,omitempty"`
+	Note          *string    `json:"note,omitempty"`
+	Peer          *[]string  `json:"peer,omitempty"`
+	RequestedAt   time.Time  `json:"requested_at"`
+	SessionId     *string    `json:"session_id,omitempty"`
+	Type          int        `json:"type"`
+}
+
+// ConnAuditPage 连接审计分页（audit.view；过滤+分页）。
+type ConnAuditPage struct {
+	Data  []ConnAuditRow `json:"data"`
+	Total int            `json:"total"`
+}
+
+// ConnAuditReport 连接审计上报（Public + per-IP 50/min；upsert：按 id+uuid+conn_id 定位， action='new'→'open'、”→'established'）。
+type ConnAuditReport struct {
+	Action       *string `json:"action,omitempty"`
+	ConnAuditRef *string `json:"conn_audit_ref,omitempty"`
+	ConnId       *string `json:"conn_id,omitempty"`
+
+	// Id 设备 id
+	Id          string    `json:"id"`
+	Ip          *string   `json:"ip,omitempty"`
+	Nonce       *string   `json:"nonce,omitempty"`
+	Note        *string   `json:"note,omitempty"`
+	Peer        *[]string `json:"peer,omitempty"`
+	PrimaryAuth *int      `json:"primary_auth,omitempty"`
+	SessionId   *string   `json:"session_id,omitempty"`
+	TwoFactor   *int      `json:"two_factor,omitempty"`
+	Type        *int      `json:"type,omitempty"`
+
+	// Uuid 设备 uuid
+	Uuid *string `json:"uuid,omitempty"`
+}
+
+// ConnAuditRow 连接审计查询行。
+type ConnAuditRow struct {
+	Action        string     `json:"action"`
+	ClosedAt      *time.Time `json:"closed_at,omitempty"`
+	ConnAuditRef  *string    `json:"conn_audit_ref,omitempty"`
+	ConnId        string     `json:"conn_id"`
+	DeviceId      string     `json:"device_id"`
+	DeviceUuid    string     `json:"device_uuid"`
+	EstablishedAt *time.Time `json:"established_at,omitempty"`
+	Id            int        `json:"id"`
+	Ip            *string    `json:"ip,omitempty"`
+	Nonce         *string    `json:"nonce,omitempty"`
+	Note          *string    `json:"note,omitempty"`
+	Peer          *[]string  `json:"peer,omitempty"`
+	PrimaryAuth   *int       `json:"primary_auth,omitempty"`
+	RequestedAt   time.Time  `json:"requested_at"`
+	SessionId     *string    `json:"session_id,omitempty"`
+	TwoFactor     *int       `json:"two_factor,omitempty"`
+	Type          int        `json:"type"`
+}
+
+// ConnNoteUpdate 超管改 note（RequireSuperAdmin；仅 note）。
+type ConnNoteUpdate struct {
+	Note string `json:"note"`
+}
+
+// ConsoleAuditPage defines model for ConsoleAuditPage.
+type ConsoleAuditPage struct {
+	Data  []ConsoleAuditRow `json:"data"`
+	Total int               `json:"total"`
+}
+
+// ConsoleAuditRow 控制台审计行（M2 rbac 审计表的查询端）。
+type ConsoleAuditRow struct {
+	Allowed        bool      `json:"allowed"`
+	CreatedAt      time.Time `json:"created_at"`
+	Id             int       `json:"id"`
+	Ip             *string   `json:"ip,omitempty"`
+	Method         *string   `json:"method,omitempty"`
+	Path           *string   `json:"path,omitempty"`
+	PermissionCode string    `json:"permission_code"`
+	UserGuid       string    `json:"user_guid"`
+	Username       *string   `json:"username,omitempty"`
+}
+
+// CreateBookProfileRequest 新建地址簿（custom/shared 共用；重名 409 Address book name already exists）。
+type CreateBookProfileRequest struct {
+	Info *struct {
+		Password *string `json:"password,omitempty"`
+	} `json:"info,omitempty"`
+	Name     string  `json:"name"`
+	Note     *string `json:"note,omitempty"`
+	Password *string `json:"password,omitempty"`
+}
+
+// CreateUserRequest 创建用户（重名 400 Username already exists；bcrypt(10)）。
+type CreateUserRequest struct {
+	Email    openapi_types.Email `json:"email"`
+	Name     string              `json:"name"`
+	Note     *string             `json:"note,omitempty"`
+	Password string              `json:"password"`
+
+	// UserGroupGuid 携带时需追加 user_groups.membership 条件授权
+	UserGroupGuid *string `json:"user_group_guid,omitempty"`
+	Username      string  `json:"username"`
+}
+
+// DashboardOverview SuperAdmin 仪表盘聚合：devices.online=lastHeartbeat≥now-60s AND status=1； connections.success=establishedAt/closedAt 双非空、failure=closedAt 非空且 establishedAt 空；counts.groups=user_groups+device_groups 合并。
+type DashboardOverview struct {
+	Connections struct {
+		Failure int `json:"failure"`
+		Success int `json:"success"`
+		Today   int `json:"today"`
+	} `json:"connections"`
+	Counts struct {
+		AddressBooks int `json:"addressBooks"`
+		Groups       int `json:"groups"`
+		Roles        int `json:"roles"`
+		Strategies   int `json:"strategies"`
+	} `json:"counts"`
+	Devices struct {
+		Online int `json:"online"`
+		Total  int `json:"total"`
+	} `json:"devices"`
+	Files struct {
+		Today  int `json:"today"`
+		Upload int `json:"upload"`
+	} `json:"files"`
+
+	// SystemStatus gopsutil cpu/mem/disk/uptime（参考 systeminformation）。
+	SystemStatus struct {
+		Cpu    float32 `json:"cpu"`
+		Disk   float32 `json:"disk"`
+		Memory float32 `json:"memory"`
+		Uptime int     `json:"uptime"`
+	} `json:"systemStatus"`
+	Users struct {
+		Admin int `json:"admin"`
+		Total int `json:"total"`
+	} `json:"users"`
+}
+
+// DashboardTrends range ∈ 7d|30d|90d 逐日聚合（connection_audits/users(createdAt)/alarm_audits； 空日补 0）。
+type DashboardTrends struct {
+	AlarmTrend []struct {
+		Count int                `json:"count"`
+		Date  openapi_types.Date `json:"date"`
+	} `json:"alarmTrend"`
+	ConnectionTrend []struct {
+		Count int                `json:"count"`
+		Date  openapi_types.Date `json:"date"`
+	} `json:"connectionTrend"`
+	NewUserTrend []struct {
+		Date     openapi_types.Date `json:"date"`
+		NewUsers int                `json:"newUsers"`
+	} `json:"newUserTrend"`
 }
 
 // DeleteUserGroupResult defines model for DeleteUserGroupResult.
@@ -350,6 +908,77 @@ type Error_Message struct {
 	union json.RawMessage
 }
 
+// FileAuditPage defines model for FileAuditPage.
+type FileAuditPage struct {
+	Data  []FileAuditRow `json:"data"`
+	Total int            `json:"total"`
+}
+
+// FileAuditReport 文件审计上报（Public + per-IP 50/min；UNIQUE(device_id,nonce) 幂等）。
+type FileAuditReport struct {
+	ConnId *string `json:"conn_id,omitempty"`
+
+	// Id 设备 id
+	Id string `json:"id"`
+
+	// Info JSON 字符串原样落库
+	Info   string  `json:"info"`
+	IsFile bool    `json:"is_file"`
+	Nonce  *string `json:"nonce,omitempty"`
+	Path   *string `json:"path,omitempty"`
+	PeerId string  `json:"peer_id"`
+
+	// Type 0=upload / 1=download
+	Type FileAuditReportType `json:"type"`
+
+	// Uuid 设备 uuid
+	Uuid string `json:"uuid"`
+}
+
+// FileAuditReportType 0=upload / 1=download
+type FileAuditReportType int
+
+// FileAuditRow defines model for FileAuditRow.
+type FileAuditRow struct {
+	ClientIp   *string    `json:"client_ip,omitempty"`
+	ClientName *string    `json:"client_name,omitempty"`
+	ConnId     *string    `json:"conn_id,omitempty"`
+	CreatedAt  *time.Time `json:"created_at,omitempty"`
+	DeviceId   string     `json:"device_id"`
+	DeviceUuid string     `json:"device_uuid"`
+	FileCount  *int       `json:"file_count,omitempty"`
+	Id         int        `json:"id"`
+	Info       *string    `json:"info,omitempty"`
+	IsFile     bool       `json:"is_file"`
+	Nonce      *string    `json:"nonce,omitempty"`
+	Path       *string    `json:"path,omitempty"`
+	PeerId     string     `json:"peer_id"`
+	Type       int        `json:"type"`
+}
+
+// FrontendSettings 前端公开设置（Public）。
+type FrontendSettings struct {
+	DefaultLanguage  string `json:"defaultLanguage"`
+	WatermarkEnabled bool   `json:"watermarkEnabled"`
+	WebauthnEnabled  bool   `json:"webauthnEnabled"`
+}
+
+// GeneralSettings 通用设置嵌套 DTO（无 siteFrontendUrl 时 effectiveFrontendUrl 回退 localhost:3000）。
+type GeneralSettings struct {
+	AuditRetentionDays int    `json:"auditRetentionDays"`
+	DefaultLanguage    string `json:"defaultLanguage"`
+	JwtExpiryDays      int    `json:"jwtExpiryDays"`
+	Site               struct {
+		BackendUrl  string `json:"backendUrl"`
+		FrontendUrl string `json:"frontendUrl"`
+	} `json:"site"`
+	WatermarkEnabled bool `json:"watermarkEnabled"`
+	Webauthn         struct {
+		Enabled bool   `json:"enabled"`
+		RpName  string `json:"rpName"`
+	} `json:"webauthn"`
+}
+
 // HeartbeatRequest defines model for HeartbeatRequest.
 type HeartbeatRequest struct {
 	// Conns 当前活跃连接 ID；键缺失 ≠ 空（指针判空区分）
@@ -378,6 +1007,68 @@ type HeartbeatResponse struct {
 	Strategy   *struct {
 		ConfigOptions map[string]string `json:"config_options"`
 	} `json:"strategy,omitempty"`
+}
+
+// InvitationAcceptRequest 接受邀请（bcrypt(10) + status=ACTIVE + usedAt=now）。
+type InvitationAcceptRequest struct {
+	Password string `json:"password"`
+	Token    string `json:"token"`
+}
+
+// InvitationInfo 邀请核对信息（token 无效/已用/过期 → 400 固定文案）。
+type InvitationInfo struct {
+	// DisplayName 可为空串
+	DisplayName string              `json:"display_name"`
+	Email       openapi_types.Email `json:"email"`
+	Name        string              `json:"name"`
+}
+
+// InvitationTokenRequest defines model for InvitationTokenRequest.
+type InvitationTokenRequest struct {
+	// Token 64 hex 邀请 token
+	Token string `json:"token"`
+}
+
+// InviteResult 邮件成功仅 message；失败降级返回 token 明文。
+type InviteResult struct {
+	Message string `json:"message"`
+
+	// Token 邮件发送失败时的明文回退（成功时不返回）
+	Token *string `json:"token,omitempty"`
+}
+
+// InviteUserRequest 邀请注册（建 UNVERIFIED 用户 + 7 天邀请 token）。
+type InviteUserRequest struct {
+	DisplayName   *string             `json:"display_name,omitempty"`
+	Email         openapi_types.Email `json:"email"`
+	Name          string              `json:"name"`
+	Note          *string             `json:"note,omitempty"`
+	UserGroupGuid *string             `json:"user_group_guid,omitempty"`
+}
+
+// LdapConfig LDAP 配置（bindCredentials 回读掩码 '******'、PUT 命中掩码跳过； test 语义同 smtp 恒 200）。
+type LdapConfig struct {
+	AdminGroups       *[]string `json:"adminGroups,omitempty"`
+	BindCredentials   *string   `json:"bindCredentials,omitempty"`
+	BindDN            *string   `json:"bindDN,omitempty"`
+	Enabled           *bool     `json:"enabled,omitempty"`
+	GroupSearchBase   *string   `json:"groupSearchBase,omitempty"`
+	GroupSearchFilter *string   `json:"groupSearchFilter,omitempty"`
+	SearchAttributes  *[]string `json:"searchAttributes,omitempty"`
+	SearchBase        *string   `json:"searchBase,omitempty"`
+	SearchFilter      *string   `json:"searchFilter,omitempty"`
+	TlsOptions        *struct {
+		Ca         *string `json:"ca,omitempty"`
+		Cert       *string `json:"cert,omitempty"`
+		Key        *string `json:"key,omitempty"`
+		Servername *string `json:"servername,omitempty"`
+	} `json:"tlsOptions,omitempty"`
+	Urls *[]string `json:"urls,omitempty"`
+}
+
+// LegacyAbSaveRequest legacy 全量保存（data 为双重 JSON 编码串；事务全删全插）。
+type LegacyAbSaveRequest struct {
+	Data string `json:"data"`
 }
 
 // LoginRequest type 分支请求；account 需 username/password， tfa_code 需 secret+tfaCode，email_code 需 secret+verificationCode。
@@ -454,6 +1145,57 @@ type MoveUsersResult struct {
 	MovedUserCount int `json:"moved_user_count"`
 }
 
+// NexusBindStatus nexus 绑定态（nexus_tokens 行）。
+type NexusBindStatus struct {
+	Bound         bool       `json:"bound"`
+	CurrentUuid   *string    `json:"current_uuid,omitempty"`
+	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
+	NexusUsername *string    `json:"nexus_username,omitempty"`
+}
+
+// NexusBuildView 构建任务视图（pending→building→completed|failed|cancelled）。
+type NexusBuildView struct {
+	Arch      string     `json:"arch"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+
+	// Custom JSON 串
+	Custom  *string              `json:"custom,omitempty"`
+	Message *string              `json:"message,omitempty"`
+	Os      string               `json:"os"`
+	Status  NexusBuildViewStatus `json:"status"`
+	Uuid    string               `json:"uuid"`
+}
+
+// NexusBuildViewStatus defines model for NexusBuildView.Status.
+type NexusBuildViewStatus string
+
+// NexusGenerateDto 构建参数（os 仅 windows；custom 键校验归上游）。
+type NexusGenerateDto struct {
+	Arch NexusGenerateDtoArch `json:"arch"`
+
+	// Custom app-name/password/salt/conn-type/disable-*(Y|N)/override-settings/ default-settings。
+	Custom map[string]string  `json:"custom"`
+	Os     NexusGenerateDtoOs `json:"os"`
+}
+
+// NexusGenerateDtoArch defines model for NexusGenerateDto.Arch.
+type NexusGenerateDtoArch string
+
+// NexusGenerateDtoOs defines model for NexusGenerateDto.Os.
+type NexusGenerateDtoOs string
+
+// NodeStatus 节点状态（并发 GET /v1/status 握手；不可达返回 reachable:false + services:[]）。
+type NodeStatus struct {
+	ApiVersion *int     `json:"api_version,omitempty"`
+	Error      *string  `json:"error,omitempty"`
+	Id         string   `json:"id"`
+	Name       string   `json:"name"`
+	NodeId     *string  `json:"node_id,omitempty"`
+	Reachable  bool     `json:"reachable"`
+	Services   []string `json:"services"`
+	Version    *string  `json:"version,omitempty"`
+}
+
 // OidcAuthRequest defines model for OidcAuthRequest.
 type OidcAuthRequest struct {
 	DeviceId            *string     `json:"deviceId,omitempty"`
@@ -462,6 +1204,44 @@ type OidcAuthRequest struct {
 	FrontendRedirectUrl *string     `json:"frontendRedirectUrl,omitempty"`
 	Provider            string      `json:"provider"`
 }
+
+// OidcProviderDto OIDC 提供者（clientSecret 明文可见——admin 可见，参考即如此）。
+type OidcProviderDto struct {
+	ClientId     string              `json:"clientId"`
+	ClientSecret string              `json:"clientSecret"`
+	CreatedAt    *time.Time          `json:"createdAt,omitempty"`
+	Enabled      bool                `json:"enabled"`
+	Guid         string              `json:"guid"`
+	Issuer       string              `json:"issuer"`
+	Name         string              `json:"name"`
+	Priority     int                 `json:"priority"`
+	Scope        string              `json:"scope"`
+	Type         OidcProviderDtoType `json:"type"`
+}
+
+// OidcProviderDtoType defines model for OidcProviderDto.Type.
+type OidcProviderDtoType string
+
+// OidcProviderPage 提供者分页（排序 priority ASC + name ASC）。
+type OidcProviderPage struct {
+	Data  []OidcProviderDto `json:"data"`
+	Total int               `json:"total"`
+}
+
+// OidcProviderUpsert 创建（POST=200；type 缺省 oidc、scope 按 type 缺省、enabled 缺省 true；重名 400）。
+type OidcProviderUpsert struct {
+	ClientId     string                  `json:"clientId"`
+	ClientSecret string                  `json:"clientSecret"`
+	Enabled      *bool                   `json:"enabled,omitempty"`
+	Issuer       string                  `json:"issuer"`
+	Name         string                  `json:"name"`
+	Priority     *int                    `json:"priority,omitempty"`
+	Scope        *string                 `json:"scope,omitempty"`
+	Type         *OidcProviderUpsertType `json:"type,omitempty"`
+}
+
+// OidcProviderUpsertType defines model for OidcProviderUpsert.Type.
+type OidcProviderUpsertType string
 
 // PasskeyView defines model for PasskeyView.
 type PasskeyView struct {
@@ -605,6 +1385,22 @@ type RoleView struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
+// RuleGuidsRequest 批量删规则（逐条 FULL_CONTROL 复核）。
+type RuleGuidsRequest struct {
+	Guids []string `json:"guids"`
+}
+
+// ServerBansDto 封禁名单（device_ids ≤10000；ips 标准 IP 格式）。
+type ServerBansDto struct {
+	DeviceIds []string `json:"device_ids"`
+	Ips       []string `json:"ips"`
+}
+
+// ServerConfigDto 服务配置透传（键校验归 agent 端；面板只做 JSON object 校验）。
+type ServerConfigDto struct {
+	Values map[string]string `json:"values"`
+}
+
 // SessionInfo defines model for SessionInfo.
 type SessionInfo struct {
 	CreatedAt  time.Time `json:"createdAt"`
@@ -615,6 +1411,67 @@ type SessionInfo struct {
 	DeviceUuid *string   `json:"deviceUuid,omitempty"`
 	ExpiresAt  time.Time `json:"expiresAt"`
 	Jti        string    `json:"jti"`
+}
+
+// SettingsTestResult 连通性测试恒 200（连接失败也是 success:false）。
+type SettingsTestResult struct {
+	// Endpoints oidc test discovery 端点
+	Endpoints *map[string]interface{} `json:"endpoints,omitempty"`
+	Message   string                  `json:"message"`
+	Success   bool                    `json:"success"`
+}
+
+// ShareCandidates 可分享候选（users + groups 两源）。
+type ShareCandidates struct {
+	Groups []struct {
+		Guid string `json:"guid"`
+		Name string `json:"name"`
+	} `json:"groups"`
+	Users []struct {
+		Guid     string  `json:"guid"`
+		Name     *string `json:"name,omitempty"`
+		Username string  `json:"username"`
+	} `json:"users"`
+}
+
+// SharedBookList sharedOnly 形态（无 total）。
+type SharedBookList struct {
+	Data []SharedBookRow `json:"data"`
+}
+
+// SharedBookPage custom/shared 书分页（custom 过滤定义 isPersonal=0 AND isShared=0 AND 非外部授权）。
+type SharedBookPage struct {
+	Data  []SharedBookRow `json:"data"`
+	Total int             `json:"total"`
+}
+
+// SharedBookRow 书行形态：rule = MAX(owner→FULL_CONTROL, 规则并集最大值)； 排序 name ASC + guid ASC。
+type SharedBookRow struct {
+	Guid    string  `json:"guid"`
+	Info    *string `json:"info,omitempty"`
+	IsOwner *bool   `json:"is_owner,omitempty"`
+	Name    string  `json:"name"`
+	Note    *string `json:"note,omitempty"`
+
+	// Owner owner 用户名
+	Owner string `json:"owner"`
+
+	// Rule READ=1 / READ_WRITE=2 / FULL_CONTROL=3
+	Rule SharedBookRowRule `json:"rule"`
+}
+
+// SharedBookRowRule READ=1 / READ_WRITE=2 / FULL_CONTROL=3
+type SharedBookRowRule int
+
+// SmtpConfig SMTP 配置（pass 回读恒 '******'，PUT 命中掩码跳过更新； 无配置时 GET 404 SMTP configuration does not exist）。
+type SmtpConfig struct {
+	Enabled *bool   `json:"enabled,omitempty"`
+	From    *string `json:"from,omitempty"`
+	Host    *string `json:"host,omitempty"`
+	Pass    *string `json:"pass,omitempty"`
+	Port    *int    `json:"port,omitempty"`
+	Secure  *bool   `json:"secure,omitempty"`
+	User    *string `json:"user,omitempty"`
 }
 
 // StrategyCandidatePage defines model for StrategyCandidatePage.
@@ -683,6 +1540,33 @@ type SysinfoRequest struct {
 	Version        *string `json:"version,omitempty"`
 }
 
+// UpdateBookProfileRequest custom 书 profile 更新（owner 复核；至少一键否则 400）。
+type UpdateBookProfileRequest struct {
+	Info *struct {
+		Password *string `json:"password,omitempty"`
+	} `json:"info,omitempty"`
+	Name     *string `json:"name,omitempty"`
+	Note     *string `json:"note,omitempty"`
+	Password *string `json:"password,omitempty"`
+}
+
+// UpdateCheckResult 更新检查（内存缓存 + frontend_version 仅影响 frontend 分支比对）。
+type UpdateCheckResult struct {
+	Backend struct {
+		Current     string  `json:"current"`
+		DownloadUrl *string `json:"downloadUrl,omitempty"`
+		HasUpdate   bool    `json:"hasUpdate"`
+		Latest      string  `json:"latest"`
+	} `json:"backend"`
+	Frontend struct {
+		Current     string  `json:"current"`
+		DownloadUrl *string `json:"downloadUrl,omitempty"`
+		HasUpdate   bool    `json:"hasUpdate"`
+		Latest      string  `json:"latest"`
+	} `json:"frontend"`
+	InstallId *string `json:"install_id,omitempty"`
+}
+
 // UpdateDeviceRequest defines model for UpdateDeviceRequest.
 type UpdateDeviceRequest struct {
 	// DeviceGroupName 关联变更需 super administrator；空串解绑
@@ -696,11 +1580,56 @@ type UpdateDeviceRequest struct {
 	UserName *string `json:"userName"`
 }
 
+// UpdateGeneralSettings 更新通用设置（watermarkEnabled 必填；defaultLanguage 匹配 ^[a-z]{2}-[A-Z]{2}$； jwtExpiryDays≥1；auditRetentionDays≥0）。
+type UpdateGeneralSettings struct {
+	AuditRetentionDays *int    `json:"auditRetentionDays,omitempty"`
+	DefaultLanguage    *string `json:"defaultLanguage,omitempty"`
+	JwtExpiryDays      *int    `json:"jwtExpiryDays,omitempty"`
+	SiteBackendUrl     *string `json:"siteBackendUrl,omitempty"`
+	SiteFrontendUrl    *string `json:"siteFrontendUrl,omitempty"`
+	WatermarkEnabled   bool    `json:"watermarkEnabled"`
+	WebauthnEnabled    *bool   `json:"webauthnEnabled,omitempty"`
+	WebauthnRpName     *string `json:"webauthnRpName,omitempty"`
+}
+
 // UpdateMeRequest user 域请求字段为 snake_case（契约，禁止规范化）。
 type UpdateMeRequest struct {
 	DisplayName *string              `json:"display_name,omitempty"`
 	Email       *openapi_types.Email `json:"email,omitempty"`
 	Note        *string              `json:"note,omitempty"`
+}
+
+// UpdateSharedBookRequest 共享书更新：改 owner 需 FULL_CONTROL（先给新 owner 授 FULL_CONTROL 规则）； 改 name/note/password 需 READ_WRITE；重名 409。
+type UpdateSharedBookRequest struct {
+	Guid string  `json:"guid"`
+	Name *string `json:"name,omitempty"`
+	Note *string `json:"note,omitempty"`
+
+	// Owner 新 owner 用户名（不存在 404 New owner user does not exist）
+	Owner    *string `json:"owner,omitempty"`
+	Password *string `json:"password,omitempty"`
+}
+
+// UpdateUserRequest 按字段分权（name/display_name/email/note→users.edit；status→users.status； user_group_guid→user_groups.membership）；is_admin 一律 400；全空 body 400。
+type UpdateUserRequest struct {
+	DisplayName *string              `json:"display_name,omitempty"`
+	Email       *openapi_types.Email `json:"email,omitempty"`
+	Name        *string              `json:"name,omitempty"`
+	Note        *string              `json:"note,omitempty"`
+
+	// Status 变更时同一事务内 revokeActiveTokens
+	Status        *UpdateUserRequestStatus `json:"status,omitempty"`
+	UserGroupGuid *string                  `json:"user_group_guid,omitempty"`
+}
+
+// UpdateUserRequestStatus 变更时同一事务内 revokeActiveTokens
+type UpdateUserRequestStatus int
+
+// UpdateUserSecurityRequest 安全设置（tfa_enforce/email_verification 写 users.info JSON）。
+type UpdateUserSecurityRequest struct {
+	EmailVerification *bool   `json:"email_verification,omitempty"`
+	NewPassword       *string `json:"new_password,omitempty"`
+	TfaEnforce        *bool   `json:"tfa_enforce,omitempty"`
 }
 
 // UserGroupPage defines model for UserGroupPage.
@@ -722,6 +1651,12 @@ type UserGroupView struct {
 	Name      string `json:"name"`
 	Note      string `json:"note"`
 	UserCount int    `json:"user_count"`
+}
+
+// UserPage defines model for UserPage.
+type UserPage struct {
+	Data  []UserView `json:"data"`
+	Total int        `json:"total"`
 }
 
 // UserPayload 用户响应 payload（snake_case 契约，禁止规范化）。
@@ -767,6 +1702,21 @@ type UserTargetView struct {
 	Name string `json:"name"`
 }
 
+// UserView 用户视图（is_protected 保护账号标记）。
+type UserView struct {
+	DisplayName *string `json:"display_name,omitempty"`
+	Email       *string `json:"email,omitempty"`
+	Guid        string  `json:"guid"`
+	IsProtected bool    `json:"is_protected"`
+	Name        string  `json:"name"`
+	Note        *string `json:"note,omitempty"`
+
+	// Status UNVERIFIED=-1 / DISABLED=0 / ACTIVE=1
+	Status        int     `json:"status"`
+	UserGroupGuid *string `json:"user_group_guid,omitempty"`
+	Username      string  `json:"username"`
+}
+
 // CurrentParam defines model for CurrentParam.
 type CurrentParam = int
 
@@ -797,6 +1747,137 @@ type DisableTfaJSONBody struct {
 type VerifyTfaJSONBody struct {
 	TfaCode string `json:"tfaCode"`
 }
+
+// ListCustomAddressBooksParams defines parameters for ListCustomAddressBooks.
+type ListCustomAddressBooksParams struct {
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	Name     *string        `form:"name,omitempty" json:"name,omitempty"`
+	Note     *string        `form:"note,omitempty" json:"note,omitempty"`
+}
+
+// ListAddressBookPeersParams defines parameters for ListAddressBookPeers.
+type ListAddressBookPeersParams struct {
+	// Ab 地址簿 guid
+	Ab    string  `form:"ab" json:"ab"`
+	Id    *string `form:"id,omitempty" json:"id,omitempty"`
+	Alias *string `form:"alias,omitempty" json:"alias,omitempty"`
+
+	// Tags 逗号分隔 tag guid 列表
+	Tags    *string                            `form:"tags,omitempty" json:"tags,omitempty"`
+	TagMode *ListAddressBookPeersParamsTagMode `form:"tagMode,omitempty" json:"tagMode,omitempty"`
+}
+
+// ListAddressBookPeersParamsTagMode defines parameters for ListAddressBookPeers.
+type ListAddressBookPeersParamsTagMode string
+
+// ListAddressBookRulesParams defines parameters for ListAddressBookRules.
+type ListAddressBookRulesParams struct {
+	// Ab 地址簿 guid（缺省=我的全部书）
+	Ab *string `form:"ab,omitempty" json:"ab,omitempty"`
+}
+
+// ListSharedAddressBookProfilesParams defines parameters for ListSharedAddressBookProfiles.
+type ListSharedAddressBookProfilesParams struct {
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	Name     *string        `form:"name,omitempty" json:"name,omitempty"`
+	Note     *string        `form:"note,omitempty" json:"note,omitempty"`
+}
+
+// ListShareCandidatesParams defines parameters for ListShareCandidates.
+type ListShareCandidatesParams struct {
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
+}
+
+// ListAdminUsersParams defines parameters for ListAdminUsers.
+type ListAdminUsersParams struct {
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	Status   *string        `form:"status,omitempty" json:"status,omitempty"`
+
+	// Name LIKE 匹配
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
+
+	// Email LIKE 匹配
+	Email         *string                      `form:"email,omitempty" json:"email,omitempty"`
+	IsAdmin       *ListAdminUsersParamsIsAdmin `form:"is_admin,omitempty" json:"is_admin,omitempty"`
+	ThirdAuthType *string                      `form:"third_auth_type,omitempty" json:"third_auth_type,omitempty"`
+	StrategyName  *string                      `form:"strategy_name,omitempty" json:"strategy_name,omitempty"`
+	UserGroupGuid *string                      `form:"user_group_guid,omitempty" json:"user_group_guid,omitempty"`
+	UserGroupName *string                      `form:"user_group_name,omitempty" json:"user_group_name,omitempty"`
+}
+
+// ListAdminUsersParamsIsAdmin defines parameters for ListAdminUsers.
+type ListAdminUsersParamsIsAdmin string
+
+// ListAlarmAuditsParams defines parameters for ListAlarmAudits.
+type ListAlarmAuditsParams struct {
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	Typ      *int           `form:"typ,omitempty" json:"typ,omitempty"`
+	Uuid     *string        `form:"uuid,omitempty" json:"uuid,omitempty"`
+}
+
+// ListConnectionAuditsParams defines parameters for ListConnectionAudits.
+type ListConnectionAuditsParams struct {
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	PeerId   *string        `form:"peer_id,omitempty" json:"peer_id,omitempty"`
+	Uuid     *string        `form:"uuid,omitempty" json:"uuid,omitempty"`
+	Type     *int           `form:"type,omitempty" json:"type,omitempty"`
+	Start    *time.Time     `form:"start,omitempty" json:"start,omitempty"`
+	End      *time.Time     `form:"end,omitempty" json:"end,omitempty"`
+}
+
+// ListConsoleAuditsParams defines parameters for ListConsoleAudits.
+type ListConsoleAuditsParams struct {
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam                 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	Result   *ListConsoleAuditsParamsResult `form:"result,omitempty" json:"result,omitempty"`
+	UserGuid *string                        `form:"user_guid,omitempty" json:"user_guid,omitempty"`
+}
+
+// ListConsoleAuditsParamsResult defines parameters for ListConsoleAudits.
+type ListConsoleAuditsParamsResult string
+
+// ListFileAuditsParams defines parameters for ListFileAudits.
+type ListFileAuditsParams struct {
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	PeerId   *string        `form:"peer_id,omitempty" json:"peer_id,omitempty"`
+	Uuid     *string        `form:"uuid,omitempty" json:"uuid,omitempty"`
+	Type     *int           `form:"type,omitempty" json:"type,omitempty"`
+}
+
+// GetDashboardTrendsParams defines parameters for GetDashboardTrends.
+type GetDashboardTrendsParams struct {
+	Range *GetDashboardTrendsParamsRange `form:"range,omitempty" json:"range,omitempty"`
+}
+
+// GetDashboardTrendsParamsRange defines parameters for GetDashboardTrends.
+type GetDashboardTrendsParamsRange string
 
 // AccessibleDeviceGroupsParams defines parameters for AccessibleDeviceGroups.
 type AccessibleDeviceGroupsParams struct {
@@ -862,6 +1943,23 @@ type ListDevicesParamsStatus string
 
 // ListDevicesParamsIsOnline defines parameters for ListDevices.
 type ListDevicesParamsIsOnline string
+
+// GetNexusLoginStatusParams defines parameters for GetNexusLoginStatus.
+type GetNexusLoginStatusParams struct {
+	LoginId string `form:"login_id" json:"login_id"`
+}
+
+// ListOidcProvidersParams defines parameters for ListOidcProviders.
+type ListOidcProvidersParams struct {
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// SortOidcProvidersJSONBody defines parameters for SortOidcProviders.
+type SortOidcProvidersJSONBody = []string
 
 // OidcAuthQueryParams defines parameters for OidcAuthQuery.
 type OidcAuthQueryParams struct {
@@ -938,6 +2036,21 @@ type ListRolesParams struct {
 	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
 }
 
+// GetServerServiceConfigParamsService defines parameters for GetServerServiceConfig.
+type GetServerServiceConfigParamsService string
+
+// UpdateServerServiceConfigParamsService defines parameters for UpdateServerServiceConfig.
+type UpdateServerServiceConfigParamsService string
+
+// GetServerServiceLogsParamsService defines parameters for GetServerServiceLogs.
+type GetServerServiceLogsParamsService string
+
+// RunServerServiceActionParamsService defines parameters for RunServerServiceAction.
+type RunServerServiceActionParamsService string
+
+// RunServerServiceActionParamsAction defines parameters for RunServerServiceAction.
+type RunServerServiceActionParamsAction string
+
 // ListStrategiesParams defines parameters for ListStrategies.
 type ListStrategiesParams struct {
 	Name *string `form:"name,omitempty" json:"name,omitempty"`
@@ -986,6 +2099,11 @@ type StrategyAssignmentsParams struct {
 // StrategyAssignmentsParamsTargetType defines parameters for StrategyAssignments.
 type StrategyAssignmentsParamsTargetType string
 
+// GetUpdateCheckParams defines parameters for GetUpdateCheck.
+type GetUpdateCheckParams struct {
+	FrontendVersion *string `form:"frontend_version,omitempty" json:"frontend_version,omitempty"`
+}
+
 // ListUserGroupsParams defines parameters for ListUserGroups.
 type ListUserGroupsParams struct {
 	Name *string `form:"name,omitempty" json:"name,omitempty"`
@@ -1009,6 +2127,12 @@ type ListUserGroupMembersParams struct {
 	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
 }
 
+// ListUsersParams defines parameters for ListUsers.
+type ListUsersParams struct {
+	// Status admin 分支过滤（'1' 活跃 / '0' 停用 / '-1' 未验证；缺省 '1'；非 admin 忽略）
+	Status *string `form:"status,omitempty" json:"status,omitempty"`
+}
+
 // UploadMyAvatarMultipartBody defines parameters for UploadMyAvatar.
 type UploadMyAvatarMultipartBody struct {
 	Avatar openapi_types.File `json:"avatar"`
@@ -1019,6 +2143,72 @@ type DisableTfaJSONRequestBody DisableTfaJSONBody
 
 // VerifyTfaJSONRequestBody defines body for VerifyTfa for application/json ContentType.
 type VerifyTfaJSONRequestBody VerifyTfaJSONBody
+
+// UpdateLegacyAddressBookJSONRequestBody defines body for UpdateLegacyAddressBook for application/json ContentType.
+type UpdateLegacyAddressBookJSONRequestBody = LegacyAbSaveRequest
+
+// DeleteCustomAddressBooksJSONRequestBody defines body for DeleteCustomAddressBooks for application/json ContentType.
+type DeleteCustomAddressBooksJSONRequestBody = BookGuidsRequest
+
+// CreateCustomAddressBookJSONRequestBody defines body for CreateCustomAddressBook for application/json ContentType.
+type CreateCustomAddressBookJSONRequestBody = CreateBookProfileRequest
+
+// UpdateCustomAddressBookProfileJSONRequestBody defines body for UpdateCustomAddressBookProfile for application/json ContentType.
+type UpdateCustomAddressBookProfileJSONRequestBody = UpdateBookProfileRequest
+
+// AddAddressBookPeerJSONRequestBody defines body for AddAddressBookPeer for application/json ContentType.
+type AddAddressBookPeerJSONRequestBody = AbPeerUpsertRequest
+
+// UpdateAddressBookPeerJSONRequestBody defines body for UpdateAddressBookPeer for application/json ContentType.
+type UpdateAddressBookPeerJSONRequestBody = AbPeerUpsertRequest
+
+// QueryAddressBookPeersJSONRequestBody defines body for QueryAddressBookPeers for application/json ContentType.
+type QueryAddressBookPeersJSONRequestBody = AbPeersQueryRequest
+
+// UpdateAddressBookRuleJSONRequestBody defines body for UpdateAddressBookRule for application/json ContentType.
+type UpdateAddressBookRuleJSONRequestBody = AbRuleUpdateRequest
+
+// CreateAddressBookRuleJSONRequestBody defines body for CreateAddressBookRule for application/json ContentType.
+type CreateAddressBookRuleJSONRequestBody = AbRuleUpsertRequest
+
+// DeleteAddressBookRulesJSONRequestBody defines body for DeleteAddressBookRules for application/json ContentType.
+type DeleteAddressBookRulesJSONRequestBody = RuleGuidsRequest
+
+// DeleteSharedAddressBooksJSONRequestBody defines body for DeleteSharedAddressBooks for application/json ContentType.
+type DeleteSharedAddressBooksJSONRequestBody = BookGuidsRequest
+
+// CreateSharedAddressBookJSONRequestBody defines body for CreateSharedAddressBook for application/json ContentType.
+type CreateSharedAddressBookJSONRequestBody = CreateBookProfileRequest
+
+// QuerySharedAddressBookProfilesJSONRequestBody defines body for QuerySharedAddressBookProfiles for application/json ContentType.
+type QuerySharedAddressBookProfilesJSONRequestBody = BookPaginationRequest
+
+// UpdateSharedAddressBookJSONRequestBody defines body for UpdateSharedAddressBook for application/json ContentType.
+type UpdateSharedAddressBookJSONRequestBody = UpdateSharedBookRequest
+
+// AddAddressBookTagJSONRequestBody defines body for AddAddressBookTag for application/json ContentType.
+type AddAddressBookTagJSONRequestBody = AbTagUpsertRequest
+
+// RenameAddressBookTagJSONRequestBody defines body for RenameAddressBookTag for application/json ContentType.
+type RenameAddressBookTagJSONRequestBody = AbTagRenameRequest
+
+// UpdateAddressBookTagJSONRequestBody defines body for UpdateAddressBookTag for application/json ContentType.
+type UpdateAddressBookTagJSONRequestBody = AbTagUpsertRequest
+
+// ReplaceAddressBookTagsJSONRequestBody defines body for ReplaceAddressBookTags for application/json ContentType.
+type ReplaceAddressBookTagsJSONRequestBody = AbTagsReplaceRequest
+
+// ReportAlarmAuditJSONRequestBody defines body for ReportAlarmAudit for application/json ContentType.
+type ReportAlarmAuditJSONRequestBody = AlarmAuditReport
+
+// ReportConnAuditJSONRequestBody defines body for ReportConnAudit for application/json ContentType.
+type ReportConnAuditJSONRequestBody = ConnAuditReport
+
+// ReportFileAuditJSONRequestBody defines body for ReportFileAudit for application/json ContentType.
+type ReportFileAuditJSONRequestBody = FileAuditReport
+
+// UpdateConnectionAuditNoteJSONRequestBody defines body for UpdateConnectionAuditNote for application/json ContentType.
+type UpdateConnectionAuditNoteJSONRequestBody = ConnNoteUpdate
 
 // CreateDeviceGroupJSONRequestBody defines body for CreateDeviceGroup for application/json ContentType.
 type CreateDeviceGroupJSONRequestBody = DeviceGroupUpsertRequest
@@ -1044,11 +2234,29 @@ type DisconnectDeviceJSONRequestBody = DisconnectRequest
 // HeartbeatJSONRequestBody defines body for Heartbeat for application/json ContentType.
 type HeartbeatJSONRequestBody = HeartbeatRequest
 
+// AcceptInvitationJSONRequestBody defines body for AcceptInvitation for application/json ContentType.
+type AcceptInvitationJSONRequestBody = InvitationAcceptRequest
+
+// VerifyInvitationJSONRequestBody defines body for VerifyInvitation for application/json ContentType.
+type VerifyInvitationJSONRequestBody = InvitationTokenRequest
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
 
 // LogoutJSONRequestBody defines body for Logout for application/json ContentType.
 type LogoutJSONRequestBody = LogoutRequest
+
+// CreateNexusBuildJSONRequestBody defines body for CreateNexusBuild for application/json ContentType.
+type CreateNexusBuildJSONRequestBody = NexusGenerateDto
+
+// CreateOidcProviderJSONRequestBody defines body for CreateOidcProvider for application/json ContentType.
+type CreateOidcProviderJSONRequestBody = OidcProviderUpsert
+
+// SortOidcProvidersJSONRequestBody defines body for SortOidcProviders for application/json ContentType.
+type SortOidcProvidersJSONRequestBody = SortOidcProvidersJSONBody
+
+// UpdateOidcProviderJSONRequestBody defines body for UpdateOidcProvider for application/json ContentType.
+type UpdateOidcProviderJSONRequestBody = OidcProviderUpsert
 
 // OidcAuthJSONRequestBody defines body for OidcAuth for application/json ContentType.
 type OidcAuthJSONRequestBody = OidcAuthRequest
@@ -1067,6 +2275,27 @@ type CreateRoleJSONRequestBody = RoleCreateRequest
 
 // UpdateRoleJSONRequestBody defines body for UpdateRole for application/json ContentType.
 type UpdateRoleJSONRequestBody = RoleUpdateRequest
+
+// UpdateServerBansJSONRequestBody defines body for UpdateServerBans for application/json ContentType.
+type UpdateServerBansJSONRequestBody = ServerBansDto
+
+// UpdateServerServiceConfigJSONRequestBody defines body for UpdateServerServiceConfig for application/json ContentType.
+type UpdateServerServiceConfigJSONRequestBody = ServerConfigDto
+
+// UpdateGeneralSettingsJSONRequestBody defines body for UpdateGeneralSettings for application/json ContentType.
+type UpdateGeneralSettingsJSONRequestBody = UpdateGeneralSettings
+
+// UpdateLdapSettingsJSONRequestBody defines body for UpdateLdapSettings for application/json ContentType.
+type UpdateLdapSettingsJSONRequestBody = LdapConfig
+
+// TestLdapSettingsJSONRequestBody defines body for TestLdapSettings for application/json ContentType.
+type TestLdapSettingsJSONRequestBody = LdapConfig
+
+// UpdateSmtpSettingsJSONRequestBody defines body for UpdateSmtpSettings for application/json ContentType.
+type UpdateSmtpSettingsJSONRequestBody = SmtpConfig
+
+// TestSmtpSettingsJSONRequestBody defines body for TestSmtpSettings for application/json ContentType.
+type TestSmtpSettingsJSONRequestBody = SmtpConfig
 
 // CreateStrategyJSONRequestBody defines body for CreateStrategy for application/json ContentType.
 type CreateStrategyJSONRequestBody = StrategyUpsertRequest
@@ -1092,6 +2321,21 @@ type UpdateUserGroupJSONRequestBody = UserGroupUpsertRequest
 // AddUserGroupMembersJSONRequestBody defines body for AddUserGroupMembers for application/json ContentType.
 type AddUserGroupMembersJSONRequestBody = MoveUsersRequest
 
+// CreateUserJSONRequestBody defines body for CreateUser for application/json ContentType.
+type CreateUserJSONRequestBody = CreateUserRequest
+
+// BatchUpdateUserSecurityJSONRequestBody defines body for BatchUpdateUserSecurity for application/json ContentType.
+type BatchUpdateUserSecurityJSONRequestBody = BatchSecurityRequest
+
+// BatchForceUserLogoutJSONRequestBody defines body for BatchForceUserLogout for application/json ContentType.
+type BatchForceUserLogoutJSONRequestBody = BatchSessionsRequest
+
+// BatchUpdateUserStatusJSONRequestBody defines body for BatchUpdateUserStatus for application/json ContentType.
+type BatchUpdateUserStatusJSONRequestBody = BatchStatusRequest
+
+// InviteUserJSONRequestBody defines body for InviteUser for application/json ContentType.
+type InviteUserJSONRequestBody = InviteUserRequest
+
 // UpdateMeJSONRequestBody defines body for UpdateMe for application/json ContentType.
 type UpdateMeJSONRequestBody = UpdateMeRequest
 
@@ -1101,8 +2345,14 @@ type UploadMyAvatarMultipartRequestBody UploadMyAvatarMultipartBody
 // ChangeMyPasswordJSONRequestBody defines body for ChangeMyPassword for application/json ContentType.
 type ChangeMyPasswordJSONRequestBody = ChangePasswordRequest
 
+// UpdateUserJSONRequestBody defines body for UpdateUser for application/json ContentType.
+type UpdateUserJSONRequestBody = UpdateUserRequest
+
 // ReplaceUserRolesJSONRequestBody defines body for ReplaceUserRoles for application/json ContentType.
 type ReplaceUserRolesJSONRequestBody = ReplaceRolesRequest
+
+// UpdateUserSecurityJSONRequestBody defines body for UpdateUserSecurity for application/json ContentType.
+type UpdateUserSecurityJSONRequestBody = UpdateUserSecurityRequest
 
 // AsErrorMessage0 returns the union data inside the Error_Message as a ErrorMessage0
 func (t Error_Message) AsErrorMessage0() (ErrorMessage0, error) {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/dto"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/entity"
+	"github.com/rustdesk-panel/rustdesk-panel-api/internal/jsonutil"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/rbac"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/repository"
 )
@@ -471,36 +472,17 @@ func (s *Service) userTargets(ctx context.Context, rows []entity.User) ([]dto.Us
 	return data, nil
 }
 
-// viewOf 实体 → 视图（config_options 解析防御，恒非 nil）。
+// viewOf 实体 → 视图（config_options 解析防御，恒非 nil；
+// 解析走单源 jsonutil（M3 批复 #1，共享知识 21），与 heartbeat 同语义）。
 func viewOf(st entity.Strategy) dto.StrategyView {
 	return dto.StrategyView{
 		Guid:          st.Guid,
 		Name:          st.Name,
 		Note:          st.Note,
-		ConfigOptions: ParseConfigOptions(st.ConfigOptions),
+		ConfigOptions: jsonutil.ParseConfigOptions(st.ConfigOptions),
 		CreatedAt:     st.CreatedAt,
 		UpdatedAt:     st.UpdatedAt,
 	}
-}
-
-// ParseConfigOptions 解析 DB TEXT 中的 JSON 串为 string→string map
-// （与 heartbeat 下发解析同语义的脏数据防御）：空串/坏 JSON/数组等
-// 非 object 形态 → 空 map；含非 string 值时剔除该键。恒返回非 nil。
-func ParseConfigOptions(raw string) map[string]string {
-	out := map[string]string{}
-	if raw == "" {
-		return out
-	}
-	var m map[string]any
-	if err := json.Unmarshal([]byte(raw), &m); err != nil {
-		return out
-	}
-	for k, v := range m {
-		if sv, ok := v.(string); ok {
-			out[k] = sv
-		}
-	}
-	return out
 }
 
 // marshalOptions config_options 请求值 → DB JSON 串（nil → 空串；
