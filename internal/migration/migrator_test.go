@@ -57,8 +57,8 @@ func TestMigrateUpShowDown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Version: %v", err)
 	}
-	if v != 2 || dirty {
-		t.Errorf("version = %d dirty = %v, want 2 false", v, dirty)
+	if v != 3 || dirty {
+		t.Errorf("version = %d dirty = %v, want 3 false", v, dirty)
 	}
 
 	// 幂等：重复 Up 无错（ErrNoChange 视为成功）。
@@ -70,14 +70,17 @@ func TestMigrateUpShowDown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Show: %v", err)
 	}
-	if len(infos) != 2 {
-		t.Fatalf("Show len = %d, want 2: %+v", len(infos), infos)
+	if len(infos) != 3 {
+		t.Fatalf("Show len = %d, want 3: %+v", len(infos), infos)
 	}
 	if infos[0].Version != 1 || !infos[0].Applied || infos[0].Name != "m1_baseline" {
 		t.Errorf("Show[0] = %+v", infos[0])
 	}
 	if infos[1].Version != 2 || !infos[1].Applied || infos[1].Name != "m2_core" {
 		t.Errorf("Show[1] = %+v", infos[1])
+	}
+	if infos[2].Version != 3 || !infos[2].Applied || infos[2].Name != "m3_business" {
+		t.Errorf("Show[2] = %+v", infos[2])
 	}
 
 	// Down 全部回退：users 表应不存在。
@@ -132,6 +135,18 @@ func TestMigrateColumnContract(t *testing.T) {
 		"user_role_assignments":              entity.UserRoleAssignment{},
 		"user_role_assignment_device_groups": entity.UserRoleAssignmentDeviceGroup{},
 		"console_audits":                     entity.ConsoleAudit{},
+		"invitations":                        entity.Invitation{},
+		"connection_audits":                  entity.ConnectionAudit{},
+		"file_audits":                        entity.FileAudit{},
+		"alarm_audits":                       entity.AlarmAudit{},
+		"address_books":                      entity.AddressBook{},
+		"address_book_peers":                 entity.AddressBookPeer{},
+		"address_book_tags":                  entity.AddressBookTag{},
+		"address_book_peer_tags":             entity.AddressBookPeerTag{},
+		"address_book_rules":                 entity.AddressBookRule{},
+		"nexus_builds":                       entity.NexusBuild{},
+		"nexus_tokens":                       entity.NexusToken{},
+		"system_settings":                    entity.SystemSetting{},
 	}
 	for table, ent := range cases {
 		t.Run(table, func(t *testing.T) {
@@ -199,6 +214,36 @@ func TestSQLiteNoUsersStrategyFK(t *testing.T) {
 	for _, ref := range refs {
 		if ref.Table == "strategies" {
 			t.Errorf("users should not reference strategies in sqlite dialect, got %+v", refs)
+		}
+	}
+}
+
+// TestSQLiteNoM3FK 设计 §3.2 FK 策略：M3 新表 SQLite 方言一律不加 FK
+// （跨表级联由应用层事务显式执行，共享知识 9；MySQL 侧仅
+// invitations.userGuid → users 的 schema 平价）。
+func TestSQLiteNoM3FK(t *testing.T) {
+	m, db := openMigrated(t)
+	if err := m.Up(); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+
+	tables := []string{
+		"invitations", "connection_audits", "file_audits", "alarm_audits",
+		"address_books", "address_book_peers", "address_book_tags",
+		"address_book_peer_tags", "address_book_rules",
+		"nexus_builds", "nexus_tokens", "system_settings",
+	}
+	for _, table := range tables {
+		var refs []struct {
+			Table string
+			From  string
+		}
+		if err := db.Raw(`SELECT "table" AS "table", "from" AS "from" FROM pragma_foreign_key_list(?)`, table).
+			Scan(&refs).Error; err != nil {
+			t.Fatalf("pragma_foreign_key_list(%s): %v", table, err)
+		}
+		if len(refs) > 0 {
+			t.Errorf("table %s should have no FK in sqlite dialect, got %+v", table, refs)
 		}
 	}
 }
