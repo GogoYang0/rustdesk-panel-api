@@ -72,3 +72,11 @@ func (r *LoginSessionRepo) DeleteExpired(ctx context.Context) (int64, error) {
 		Delete(&entity.LoginSession{})
 	return res.RowsAffected, res.Error
 }
+
+// DeleteUnused 删除用户全部未使用登录会话（revokeActiveTokens
+// 半边②；used=false 的两步登录中间态，已用会话不清理）。
+func (r *LoginSessionRepo) DeleteUnused(ctx context.Context, userGuid string) error {
+	return r.db.WithContext(ctx).
+		Where("userGuid = ? AND used = ?", userGuid, false).
+		Delete(&entity.LoginSession{}).Error
+}

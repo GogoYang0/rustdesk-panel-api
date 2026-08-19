@@ -36,9 +36,11 @@ func (r *InvitationRepo) FindByToken(ctx context.Context, token string) (*entity
 	return &inv, nil
 }
 
-// MarkUsed 接受完成：写入 usedAt（accept 事务内调用，与用户激活同事务）。
-func (r *InvitationRepo) MarkUsed(ctx context.Context, guid string, usedAt time.Time) error {
-	return r.db.WithContext(ctx).Model(&entity.Invitation{}).
+// MarkUsedTx 接受完成：事务内写入 usedAt（accept 与用户激活同事务；
+// Tx 后缀强调必须在事务执行器上运行——内存库单连接池下根连接会
+// 与持有行锁的事务互等死锁）。
+func (r *InvitationRepo) MarkUsedTx(tx *gorm.DB, guid string, usedAt time.Time) error {
+	return tx.Model(&entity.Invitation{}).
 		Where("guid = ?", guid).
 		Update("usedAt", usedAt).Error
 }
