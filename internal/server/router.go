@@ -339,6 +339,24 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 	rt.HandlePolicy(http.MethodGet, "/api/user-groups/{guid}/users", rbac.PermPolicy(rbac.CodeUserGroupsView), 0, hf(d.UserGroups.Members))
 	rt.HandlePolicy(http.MethodPost, "/api/user-groups/{guid}/users", rbac.PermPolicy(rbac.CodeUserGroupsMembership), 0, hf(d.UserGroups.MoveUsers))
 
+	// ---- 用户域（M3 T03 实现；M1 已有 5 条 me/avatar 端点不重复
+	// 注册。/users/invite 走 users.create + 条件 membership；invite/
+	// verify/accept 与批量族按设计 §1.3 档位表）----
+	rt.HandlePolicy(http.MethodGet, "/api/users", rbac.PermPolicy(rbac.CodeUsersView), 0, hf(d.User.ListUsers))
+	rt.HandlePolicy(http.MethodPost, "/api/users", rbac.PermPolicy(rbac.CodeUsersCreate), 0, hf(d.User.CreateUser))
+	rt.HandlePolicy(http.MethodPost, "/api/users/invite", rbac.PermPolicy(rbac.CodeUsersCreate), 0, hf(d.User.InviteUser))
+	rt.HandlePolicy(http.MethodPost, "/api/invitations/verify", rbac.PublicPolicy(), 0, hf(d.User.VerifyInvitation))
+	rt.HandlePolicy(http.MethodPost, "/api/invitations/accept", rbac.PublicPolicy(), 0, hf(d.User.AcceptInvitation))
+	rt.HandlePolicy(http.MethodPatch, "/api/users/batch/status", rbac.PermPolicy(rbac.CodeUsersStatus), 0, hf(d.User.BatchStatus))
+	rt.HandlePolicy(http.MethodPatch, "/api/users/batch/security", rbac.PermPolicy(rbac.CodeUsersSecurity), 0, hf(d.User.BatchSecurity))
+	rt.HandlePolicy(http.MethodDelete, "/api/users/batch/sessions", rbac.PermPolicy(rbac.CodeUsersForceLogout), 0, hf(d.User.BatchSessions))
+	rt.HandlePolicy(http.MethodGet, "/api/users/{guid}", rbac.PermPolicy(rbac.CodeUsersView), 0, hf(d.User.GetUser))
+	rt.HandlePolicy(http.MethodPatch, "/api/users/{guid}", rbac.AuthPolicy(), 0, hf(d.User.UpdateUser))
+	rt.HandlePolicy(http.MethodDelete, "/api/users/{guid}", rbac.PermPolicy(rbac.CodeUsersDelete), 0, hf(d.User.DeleteUser))
+	rt.HandlePolicy(http.MethodPatch, "/api/users/{guid}/security", rbac.PermPolicy(rbac.CodeUsersSecurity), 0, hf(d.User.UpdateUserSecurity))
+	rt.HandlePolicy(http.MethodDelete, "/api/users/{guid}/sessions", rbac.PermPolicy(rbac.CodeUsersForceLogout), 0, hf(d.User.ForceLogout))
+	rt.HandlePolicy(http.MethodGet, "/api/admin/users", rbac.PermPolicy(rbac.CodeUsersView), 0, hf(d.User.ListAdminUsers))
+
 	// ---- M3 契约骨架（T01）：96 operation 按设计 §1.3 档位表注册，
 	// handler 体为 501 占位（notImplemented），T03~T07 逐域替换。
 	rt.registerM3Stubs()
@@ -350,22 +368,6 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 // 对齐设计 §1.3 策略总表——三方一致性测试以本注册声明为路由侧数据源。
 func (rt *Router) registerM3Stubs() {
 	stub := notImplemented
-
-	// ---- 用户域（M1 已有 5 条 me/avatar 端点不重复注册）----
-	rt.HandlePolicy(http.MethodGet, "/api/users", rbac.PermPolicy(rbac.CodeUsersView), 0, stub("GET /api/users"))
-	rt.HandlePolicy(http.MethodPost, "/api/users", rbac.PermPolicy(rbac.CodeUsersCreate), 0, stub("POST /api/users"))
-	rt.HandlePolicy(http.MethodPost, "/api/users/invite", rbac.PermPolicy(rbac.CodeUsersCreate), 0, stub("POST /api/users/invite"))
-	rt.HandlePolicy(http.MethodPost, "/api/invitations/verify", rbac.PublicPolicy(), 0, stub("POST /api/invitations/verify"))
-	rt.HandlePolicy(http.MethodPost, "/api/invitations/accept", rbac.PublicPolicy(), 0, stub("POST /api/invitations/accept"))
-	rt.HandlePolicy(http.MethodPatch, "/api/users/batch/status", rbac.PermPolicy(rbac.CodeUsersStatus), 0, stub("PATCH /api/users/batch/status"))
-	rt.HandlePolicy(http.MethodPatch, "/api/users/batch/security", rbac.PermPolicy(rbac.CodeUsersSecurity), 0, stub("PATCH /api/users/batch/security"))
-	rt.HandlePolicy(http.MethodDelete, "/api/users/batch/sessions", rbac.PermPolicy(rbac.CodeUsersForceLogout), 0, stub("DELETE /api/users/batch/sessions"))
-	rt.HandlePolicy(http.MethodGet, "/api/users/{guid}", rbac.PermPolicy(rbac.CodeUsersView), 0, stub("GET /api/users/{guid}"))
-	rt.HandlePolicy(http.MethodPatch, "/api/users/{guid}", rbac.AuthPolicy(), 0, stub("PATCH /api/users/{guid}"))
-	rt.HandlePolicy(http.MethodDelete, "/api/users/{guid}", rbac.PermPolicy(rbac.CodeUsersDelete), 0, stub("DELETE /api/users/{guid}"))
-	rt.HandlePolicy(http.MethodPatch, "/api/users/{guid}/security", rbac.PermPolicy(rbac.CodeUsersSecurity), 0, stub("PATCH /api/users/{guid}/security"))
-	rt.HandlePolicy(http.MethodDelete, "/api/users/{guid}/sessions", rbac.PermPolicy(rbac.CodeUsersForceLogout), 0, stub("DELETE /api/users/{guid}/sessions"))
-	rt.HandlePolicy(http.MethodGet, "/api/admin/users", rbac.PermPolicy(rbac.CodeUsersView), 0, stub("GET /api/admin/users"))
 
 	// ---- 通讯录域（24 端点仅 Auth；8 端点按 share/edit/view 分码）----
 	rt.HandlePolicy(http.MethodGet, "/api/ab", rbac.AuthPolicy(), 0, stub("GET /api/ab"))

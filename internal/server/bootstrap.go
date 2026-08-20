@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/rustdesk-panel/rustdesk-panel-api/internal/email"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/handler"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/rbac"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/repository"
@@ -78,12 +79,22 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	authzSvc := rbac.NewAuthorizationService(NewRBACStores(deps.DB), auditSvc)
 	rbacMW := rbac.NewMiddleware(authzSvc)
 
+	// 用户域（M3 T03）：管理端 CRUD/批量/邀请/安全。SMTP 配置经
+	// 禁用态 provider 动态读取（T07 settings store 落地后接线
+	// smtp.* 键，届时 SendInvitation 才能真实出站；当前恒降级
+	// token 明文）；frontendURL 传空 → 服务层回退缺省值（事实④）。
+	invites := repository.NewInvitationRepo(deps.DB)
+	mailer := email.NewMailer(func() email.SmtpConfig { return email.SmtpConfig{} }, deps.Logger)
+	userSvc := usersvc.NewService(
+		deps.DB, users, groups, invites, tokenRepo, sessions, authzSvc,
+		mailer, "", deps.Config.AdminUsername)
+
 	authH := handler.NewAuthHandler(loginSvc, tfaSvc, passkeySvc, tokenSvc)
 	oidcH, err := handler.NewOidcHandler(oidcSvc)
 	if err != nil {
 		return nil, err
 	}
-	userH := handler.NewUserHandler(profileSvc, avatarSvc)
+	userH := handler.NewUserHandler(profileSvc, avatarSvc, userSvc)
 
 	// 设备域（T03）：协议（heartbeat/sysinfo）+ /peers 查询 + /devices
 	// 管理。断连队列为进程内单例（DisconnectStore），心跳与管理动作
