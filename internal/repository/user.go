@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -321,4 +322,18 @@ func (r *UserRepo) DeleteWithRelated(ctx context.Context, guid string) error {
 		}
 		return tx.Where("guid = ?", guid).Delete(&entity.User{}).Error
 	})
+}
+
+// CountByDay 用户注册按日聚合（dashboard newUserTrend；createdAt
+// 锚点，[from, to) 左闭右开；DayCount.Date 为 DATE() 产出的
+// YYYY-MM-DD 字符串，双方言通用）。
+func (r *UserRepo) CountByDay(ctx context.Context, from, to time.Time) ([]DayCount, error) {
+	out := make([]DayCount, 0)
+	err := r.db.WithContext(ctx).Model(&entity.User{}).
+		Select("DATE(createdAt) AS date, COUNT(*) AS count").
+		Where("createdAt >= ? AND createdAt < ?", from, to).
+		Group("DATE(createdAt)").
+		Order("date ASC").
+		Scan(&out).Error
+	return out, err
 }

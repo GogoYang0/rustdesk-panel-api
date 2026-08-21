@@ -148,6 +148,9 @@ func (r *ConnectionAuditRepo) UpsertConn(ctx context.Context, in *entity.Connect
 }
 
 // applyConnFilter 构建 conn 列表过滤链（别名列直引，无 JOIN）。
+// start/end 统一转本地时区：SQLite 侧时间以本地文本落库/绑定（带
+// +08:00 后缀），跨时区后缀的字典序比较不可靠——本地化后与存储文本
+// 同构；MySQL 侧 DATETIME 值比较与时区无关，Local 化同样正确。
 func applyConnFilter(f ConnAuditFilter) func(*gorm.DB) *gorm.DB {
 	return func(q *gorm.DB) *gorm.DB {
 		if f.PeerId != "" {
@@ -160,10 +163,10 @@ func applyConnFilter(f ConnAuditFilter) func(*gorm.DB) *gorm.DB {
 			q = q.Where("type = ?", *f.Type)
 		}
 		if f.Start != nil {
-			q = q.Where("requestedAt >= ?", *f.Start)
+			q = q.Where("requestedAt >= ?", f.Start.Local())
 		}
 		if f.End != nil {
-			q = q.Where("requestedAt <= ?", *f.End)
+			q = q.Where("requestedAt <= ?", f.End.Local())
 		}
 		return q
 	}
@@ -215,11 +218,31 @@ func (r *ConnectionAuditRepo) ListActive(ctx context.Context, allowedUUIDs []str
 	return out, nil
 }
 
-// UpdateNote 超管改 note（PATCH /api/audits/conn/{id} 仅 note）。
+// FindByID 按自增主键查询（PATCH /api/audits/conn/{id} 存在性检查）；
+// 未找到返回 ErrNotFound。
+func (r *ConnectionAuditRepo) FindByID(ctx context.Context, id uint) (*entity.ConnectionAudit, error) {
+	var row entity.ConnectionAudit
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// UpdateNote 备注更新（report note-only 模式与 PATCH
+// /api/audits/conn/{id} 共用；空串写 NULL——参考 note=dto.note||null
+// 语义，查询行 omitempty 序列化保持一致）。
 func (r *ConnectionAuditRepo) UpdateNote(ctx context.Context, id uint, note string) error {
+	var val any
+	if note != "" {
+		val = note
+	}
 	return r.db.WithContext(ctx).Model(&entity.ConnectionAudit{}).
 		Where("id = ?", id).
-		Update("note", note).Error
+		Update("note", val).Error
 }
 
 // CountToday 今日连接数（dashboard overview.connections.today；
@@ -232,17 +255,18 @@ func (r *ConnectionAuditRepo) CountToday(ctx context.Context, dayStart time.Time
 	return n, err
 }
 
-// CountSuccessFailure 仪表盘成功/失败口径（设计 §1.1⑥）：
-// success = establishedAt/closedAt 双非空；failure = closedAt 非空且
-// establishedAt 空。
-func (r *ConnectionAuditRepo) CountSuccessFailure(ctx context.Context) (success, failure int64, err error) {
+// CountSuccessFailure 仪表盘成功/失败口径（设计 §1.1⑥，参考实现
+// 以当日为界）：success = establishedAt/closedAt 双非空；failure =
+// closedAt 非空且 establishedAt 空。since 为当日零点（requestedAt
+// 锚点，本表无 createdAt 列，T02 时间锚点契约）。
+func (r *ConnectionAuditRepo) CountSuccessFailure(ctx context.Context, since time.Time) (success, failure int64, err error) {
 	if err = r.db.WithContext(ctx).Model(&entity.ConnectionAudit{}).
-		Where("establishedAt IS NOT NULL AND closedAt IS NOT NULL").
+		Where("requestedAt >= ? AND establishedAt IS NOT NULL AND closedAt IS NOT NULL", since).
 		Count(&success).Error; err != nil {
 		return 0, 0, err
 	}
 	if err = r.db.WithContext(ctx).Model(&entity.ConnectionAudit{}).
-		Where("closedAt IS NOT NULL AND establishedAt IS NULL").
+		Where("requestedAt >= ? AND closedAt IS NOT NULL AND establishedAt IS NULL", since).
 		Count(&failure).Error; err != nil {
 		return 0, 0, err
 	}

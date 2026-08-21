@@ -714,7 +714,7 @@ func TestConnectionAuditCountTodaySuccessFailure(t *testing.T) {
 	if err != nil || todayN != 3 {
 		t.Fatalf("CountToday = %d err=%v", todayN, err)
 	}
-	success, failure, err := repo.CountSuccessFailure(ctx)
+	success, failure, err := repo.CountSuccessFailure(ctx, time.Time{})
 	if err != nil {
 		t.Fatalf("CountSuccessFailure: %v", err)
 	}
