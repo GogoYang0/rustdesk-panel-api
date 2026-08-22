@@ -257,8 +257,8 @@ func TestInvitationRepoToken(t *testing.T) {
 	}
 
 	usedAt := time.Now()
-	if err := repo.MarkUsed(ctx, data.InvitationPending.Guid, usedAt); err != nil {
-		t.Fatalf("MarkUsed: %v", err)
+	if err := repo.MarkUsedTx(db, data.InvitationPending.Guid, usedAt); err != nil {
+		t.Fatalf("MarkUsedTx: %v", err)
 	}
 	inv, err = repo.FindByToken(ctx, data.InvitationPending.Token)
 	if err != nil {

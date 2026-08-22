@@ -77,3 +77,12 @@ func (r *UserTokenRepo) DeleteExpired(ctx context.Context, before time.Time) (in
 		Delete(&entity.UserToken{})
 	return res.RowsAffected, res.Error
 }
+
+// RevokeAllActive 撤销用户全部未过期有效 token（revokeActiveTokens
+// 半边①，共享知识 23：users.status/security/batch/force_logout 四链
+// 复用；过期 token 不触碰）。
+func (r *UserTokenRepo) RevokeAllActive(ctx context.Context, userGuid string, now time.Time) error {
+	return r.db.WithContext(ctx).Model(&entity.UserToken{}).
+		Where("userGuid = ? AND isRevoked = ? AND expiresAt > ?", userGuid, false, now).
+		Update("isRevoked", true).Error
+}
