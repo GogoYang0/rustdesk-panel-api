@@ -357,15 +357,34 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 	rt.HandlePolicy(http.MethodDelete, "/api/users/{guid}/sessions", rbac.PermPolicy(rbac.CodeUsersForceLogout), 0, hf(d.User.ForceLogout))
 	rt.HandlePolicy(http.MethodGet, "/api/admin/users", rbac.PermPolicy(rbac.CodeUsersView), 0, hf(d.User.ListAdminUsers))
 
-	// ---- M3 契约骨架（T01）：96 operation 按设计 §1.3 档位表注册，
-	// handler 体为 501 占位（notImplemented），T03~T07 逐域替换。
+	// ---- 审计域（M3 T04 实现；★ 上报单数路径 Public + per-IP
+	// 50/min——设备侧直连无 JWT；查询复数按 audit.view /
+	// devices.disconnect 分档，PATCH note 走 super administrator）----
+	rt.HandlePolicy(http.MethodPost, "/api/audit/conn", rbac.PublicPolicy(), 50, hf(d.Audit.ReportConn))
+	rt.HandlePolicy(http.MethodPost, "/api/audit/file", rbac.PublicPolicy(), 50, hf(d.Audit.ReportFile))
+	rt.HandlePolicy(http.MethodPost, "/api/audit/alarm", rbac.PublicPolicy(), 50, hf(d.Audit.ReportAlarm))
+	rt.HandlePolicy(http.MethodGet, "/api/audits/conn/active", rbac.PermPolicy(rbac.CodeDevicesDisconnect), 0, hf(d.Audit.ListActiveConn))
+	rt.HandlePolicy(http.MethodGet, "/api/audits/conn", rbac.PermPolicy(rbac.CodeAuditView), 0, hf(d.Audit.ListConn))
+	rt.HandlePolicy(http.MethodPatch, "/api/audits/conn/{id}", rbac.SuperAdminPolicy(), 0, hf(d.Audit.UpdateConnNote))
+	rt.HandlePolicy(http.MethodGet, "/api/audits/file", rbac.PermPolicy(rbac.CodeAuditView), 0, hf(d.Audit.ListFile))
+	rt.HandlePolicy(http.MethodGet, "/api/audits/alarm", rbac.PermPolicy(rbac.CodeAuditView), 0, hf(d.Audit.ListAlarm))
+	rt.HandlePolicy(http.MethodGet, "/api/audits/console", rbac.PermPolicy(rbac.CodeAuditView), 0, hf(d.Audit.ListConsole))
+
+	// ---- 仪表盘域（M3 T04 实现；双端点 super administrator）----
+	rt.HandlePolicy(http.MethodGet, "/api/dashboard", rbac.SuperAdminPolicy(), 0, hf(d.Dashboard.Overview))
+	rt.HandlePolicy(http.MethodGet, "/api/dashboard/trends", rbac.SuperAdminPolicy(), 0, hf(d.Dashboard.Trends))
+
+	// ---- M3 契约骨架（T01）：剩余 69 条 501 占位（notImplemented），
+	// T05~T07 逐域替换（user 14 条 T03、审计 9 + 仪表盘 2 条 T04 已
+	// 接真实实现；M3 全量 96 operation）。
 	rt.registerM3Stubs()
 }
 
-// registerM3Stubs 注册 M3 全部新增端点（96 = 14 user + 32 ab + 9 audit +
-// 2 dashboard + 10 servers + 9 nexus + 9 settings + 8 oidc + 1 update +
-// 2 静态，其中静态两条已由 registerStatic 登记）。档位与限流参数严格
-// 对齐设计 §1.3 策略总表——三方一致性测试以本注册声明为路由侧数据源。
+// registerM3Stubs 注册 M3 剩余骨架端点（69 = 32 ab + 10 servers +
+// 9 nexus + 9 settings + 8 oidc + 1 update；user 14 条 T03 已接真实
+// 实现、审计 9 + 仪表盘 2 条 T04 已接真实实现，另有 2 条静态路由由
+// registerStatic 登记——M3 全量 96）。档位与限流参数严格对齐设计
+// §1.3 策略总表——三方一致性测试以本注册声明为路由侧数据源。
 func (rt *Router) registerM3Stubs() {
 	stub := notImplemented
 
@@ -402,21 +421,6 @@ func (rt *Router) registerM3Stubs() {
 	rt.HandlePolicy(http.MethodPost, "/api/ab/rule", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, stub("POST /api/ab/rule"))
 	rt.HandlePolicy(http.MethodPatch, "/api/ab/rule", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, stub("PATCH /api/ab/rule"))
 	rt.HandlePolicy(http.MethodDelete, "/api/ab/rules", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, stub("DELETE /api/ab/rules"))
-
-	// ---- 审计域（★ 上报单数路径 Public + per-IP 50/min，查询复数）----
-	rt.HandlePolicy(http.MethodPost, "/api/audit/conn", rbac.PublicPolicy(), 50, stub("POST /api/audit/conn"))
-	rt.HandlePolicy(http.MethodPost, "/api/audit/file", rbac.PublicPolicy(), 50, stub("POST /api/audit/file"))
-	rt.HandlePolicy(http.MethodPost, "/api/audit/alarm", rbac.PublicPolicy(), 50, stub("POST /api/audit/alarm"))
-	rt.HandlePolicy(http.MethodGet, "/api/audits/conn/active", rbac.PermPolicy(rbac.CodeDevicesDisconnect), 0, stub("GET /api/audits/conn/active"))
-	rt.HandlePolicy(http.MethodGet, "/api/audits/conn", rbac.PermPolicy(rbac.CodeAuditView), 0, stub("GET /api/audits/conn"))
-	rt.HandlePolicy(http.MethodPatch, "/api/audits/conn/{id}", rbac.SuperAdminPolicy(), 0, stub("PATCH /api/audits/conn/{id}"))
-	rt.HandlePolicy(http.MethodGet, "/api/audits/file", rbac.PermPolicy(rbac.CodeAuditView), 0, stub("GET /api/audits/file"))
-	rt.HandlePolicy(http.MethodGet, "/api/audits/alarm", rbac.PermPolicy(rbac.CodeAuditView), 0, stub("GET /api/audits/alarm"))
-	rt.HandlePolicy(http.MethodGet, "/api/audits/console", rbac.PermPolicy(rbac.CodeAuditView), 0, stub("GET /api/audits/console"))
-
-	// ---- 仪表盘域（双端点 SuperAdmin）----
-	rt.HandlePolicy(http.MethodGet, "/api/dashboard", rbac.SuperAdminPolicy(), 0, stub("GET /api/dashboard"))
-	rt.HandlePolicy(http.MethodGet, "/api/dashboard/trends", rbac.SuperAdminPolicy(), 0, stub("GET /api/dashboard/trends"))
 
 	// ---- 服务器域（经 agent 转发，五码分档）----
 	rt.HandlePolicy(http.MethodGet, "/api/servers", rbac.PermPolicy(rbac.CodeServersView), 0, stub("GET /api/servers"))

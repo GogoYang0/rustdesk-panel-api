@@ -6973,25 +6973,37 @@ components:
 
     ConsoleAuditRow:
       type: object
-      description: 控制台审计行（M2 rbac 审计表的查询端）。
-      required: [id, user_guid, allowed, permission_code, created_at]
+      description: >-
+        控制台审计行（M2 rbac 审计表查询端，形状对齐 console_audits 表）：
+        actor_user_name 由 users 表 LEFT JOIN 补齐（系统级动作为 null）；
+        before_state/after_state 以原始 JSON 直出（空/非法为 null）。
+      required: [guid, target_type, action, result, created_at]
       properties:
-        id:
-          type: integer
-        user_guid:
+        guid:
           type: string
-        username:
+        actor_user_guid:
           type: string
-        allowed:
-          type: boolean
-        permission_code:
+          nullable: true
+        actor_user_name:
           type: string
-        path:
+          nullable: true
+        target_type:
           type: string
-        method:
+        target_guid:
           type: string
-        ip:
+        action:
           type: string
+        result:
+          type: string
+          enum: [allowed, denied]
+        reason:
+          type: string
+          nullable: true
+        before_state: {}
+        after_state: {}
+        request_id:
+          type: string
+          nullable: true
         created_at:
           type: string
           format: date-time

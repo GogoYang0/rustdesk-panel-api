@@ -68,6 +68,12 @@ const (
 	BatchStatusRequestStatusN1     BatchStatusRequestStatus = 1
 )
 
+// Defines values for ConsoleAuditRowResult.
+const (
+	ConsoleAuditRowResultAllowed ConsoleAuditRowResult = "allowed"
+	ConsoleAuditRowResultDenied  ConsoleAuditRowResult = "denied"
+)
+
 // Defines values for DeviceStatusUpdateRequestStatus.
 const (
 	Disabled DeviceStatusUpdateRequestStatus = "disabled"
@@ -189,8 +195,8 @@ const (
 
 // Defines values for ListConsoleAuditsParamsResult.
 const (
-	Allowed ListConsoleAuditsParamsResult = "allowed"
-	Denied  ListConsoleAuditsParamsResult = "denied"
+	ListConsoleAuditsParamsResultAllowed ListConsoleAuditsParamsResult = "allowed"
+	ListConsoleAuditsParamsResultDenied  ListConsoleAuditsParamsResult = "denied"
 )
 
 // Defines values for GetDashboardTrendsParamsRange.
@@ -653,18 +659,24 @@ type ConsoleAuditPage struct {
 	Total int               `json:"total"`
 }
 
-// ConsoleAuditRow 控制台审计行（M2 rbac 审计表的查询端）。
+// ConsoleAuditRow 控制台审计行（M2 rbac 审计表查询端，形状对齐 console_audits 表）： actor_user_name 由 users 表 LEFT JOIN 补齐（系统级动作为 null）； before_state/after_state 以原始 JSON 直出（空/非法为 null）。
 type ConsoleAuditRow struct {
-	Allowed        bool      `json:"allowed"`
-	CreatedAt      time.Time `json:"created_at"`
-	Id             int       `json:"id"`
-	Ip             *string   `json:"ip,omitempty"`
-	Method         *string   `json:"method,omitempty"`
-	Path           *string   `json:"path,omitempty"`
-	PermissionCode string    `json:"permission_code"`
-	UserGuid       string    `json:"user_guid"`
-	Username       *string   `json:"username,omitempty"`
+	Action        string                `json:"action"`
+	ActorUserGuid *string               `json:"actor_user_guid"`
+	ActorUserName *string               `json:"actor_user_name"`
+	AfterState    interface{}           `json:"after_state,omitempty"`
+	BeforeState   interface{}           `json:"before_state,omitempty"`
+	CreatedAt     time.Time             `json:"created_at"`
+	Guid          string                `json:"guid"`
+	Reason        *string               `json:"reason"`
+	RequestId     *string               `json:"request_id"`
+	Result        ConsoleAuditRowResult `json:"result"`
+	TargetGuid    *string               `json:"target_guid,omitempty"`
+	TargetType    string                `json:"target_type"`
 }
+
+// ConsoleAuditRowResult defines model for ConsoleAuditRow.Result.
+type ConsoleAuditRowResult string
 
 // CreateBookProfileRequest 新建地址簿（custom/shared 共用；重名 409 Address book name already exists）。
 type CreateBookProfileRequest struct {
