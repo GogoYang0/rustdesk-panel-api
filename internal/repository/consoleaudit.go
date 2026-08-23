@@ -50,3 +50,55 @@ func (r *ConsoleAuditRepo) CreateAuditTx(tx *gorm.DB, rec rbac.AuditRecord) erro
 	}
 	return tx.Create(row).Error
 }
+
+// ConsoleAuditFilter GET /api/audits/console 过滤（契约
+// ListConsoleAuditsParams：result 精确（allowed/denied）、user_guid
+// 精确 actorUserGuid；当前/页大小）。
+type ConsoleAuditFilter struct {
+	Result   string // 精确 result；空串不过滤
+	UserGuid string // 精确 actorUserGuid；空串不过滤
+	Current  int    // 页码（1 起）
+	PageSize int    // 页大小（0 = 不分页）
+}
+
+// ConsoleAuditWithActor 控制台审计行 + 操作者用户名（LEFT JOIN
+// users 补齐 actor_user_name；系统级动作 actorUserGuid 为 NULL，
+// ActorName 亦 NULL）。
+type ConsoleAuditWithActor struct {
+	entity.ConsoleAudit
+	ActorName *string `gorm:"column:actorName"`
+}
+
+// ListPaged 控制台审计分页（GET /api/audits/console；audit.view
+// 中间件已过。排序 createdAt DESC + guid 稳定序，与参考一致）。
+func (r *ConsoleAuditRepo) ListPaged(ctx context.Context, f ConsoleAuditFilter) ([]ConsoleAuditWithActor, int64, error) {
+	apply := func(q *gorm.DB) *gorm.DB {
+		if f.Result != "" {
+			q = q.Where("console_audits.result = ?", f.Result)
+		}
+		if f.UserGuid != "" {
+			q = q.Where("console_audits.actorUserGuid = ?", f.UserGuid)
+		}
+		return q
+	}
+	base := r.db.WithContext(ctx).Table("console_audits").
+		Select("console_audits.*, users.username AS actorName").
+		Joins("LEFT JOIN users ON users.guid = console_audits.actorUserGuid")
+	base = apply(base)
+	var total int64
+	if err := r.db.WithContext(ctx).Table("console_audits").Scopes(apply).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	fetch := base.Order("console_audits.createdAt DESC, console_audits.guid DESC")
+	if f.PageSize > 0 {
+		fetch = fetch.Limit(f.PageSize)
+		if f.Current > 1 {
+			fetch = fetch.Offset((f.Current - 1) * f.PageSize)
+		}
+	}
+	out := make([]ConsoleAuditWithActor, 0)
+	if err := fetch.Scan(&out).Error; err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
+}

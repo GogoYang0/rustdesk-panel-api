@@ -97,6 +97,16 @@ func (r *FileAuditRepo) CountToday(ctx context.Context, dayStart time.Time) (int
 	return n, err
 }
 
+// CountTodayUpload 今日上传数（dashboard overview.files.upload，
+// type=0；参考 uploadToday 口径）。
+func (r *FileAuditRepo) CountTodayUpload(ctx context.Context, dayStart time.Time) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&entity.FileAudit{}).
+		Where("requestedAt >= ? AND type = ?", dayStart, 0).
+		Count(&n).Error
+	return n, err
+}
+
 // CountByDay 按日聚合（dashboard trends；DATE(requestedAt) 锚点，
 // 左闭右开 [from, to)）。
 func (r *FileAuditRepo) CountByDay(ctx context.Context, from, to time.Time) ([]DayCount, error) {

@@ -5,7 +5,9 @@ import (
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/handler"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/rbac"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/repository"
+	auditsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/audit"
 	authsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/auth"
+	dashboardsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/dashboard"
 	devicesvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/device"
 	devicegroupsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/devicegroup"
 	rbacsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/rbac"
@@ -44,6 +46,12 @@ type Domain struct {
 	// 区分：前者为域端点集合，后者为授权决策服务。）
 	RbacAPI    *handler.RbacHandler
 	UserGroups *handler.UserGroupHandler
+
+	// 审计域与仪表盘域（T04）：上报三端（Public 档在路由）+ 查询
+	// 六端（audit.view / devices.disconnect / SuperAdmin）+ 仪表盘
+	// 聚合与趋势（双端点 SuperAdmin）。
+	Audit     *handler.AuditHandler
+	Dashboard *handler.DashboardHandler
 
 	Auth *handler.AuthHandler
 	Oidc *handler.OidcHandler
@@ -139,6 +147,26 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	rbacH := handler.NewRbacHandler(authzSvc, roleSvc, userRoleSvc)
 	userGroupH := handler.NewUserGroupHandler(userGroupSvc)
 
+	// 审计域与仪表盘域（T04）：上报三端（conn upsert 状态机 / file、
+	// alarm nonce 幂等）+ 查询六端（active 的 scope 过滤复用 RBAC
+	// 授权服务与 peers 仓储；console 查询复用 M2 auditRepo）。仪表盘
+	// systemStatus 磁盘统计以 DATA_DIR 所在卷为锚点（§10-6 批复）。
+	connAuditRepo := repository.NewConnectionAuditRepo(deps.DB)
+	fileAuditRepo := repository.NewFileAuditRepo(deps.DB)
+	alarmAuditRepo := repository.NewAlarmAuditRepo(deps.DB)
+	dashboardRepo := repository.NewDashboardRepo(deps.DB)
+	addressBookRepo := repository.NewAddressBookRepo(deps.DB)
+
+	auditReportSvc := auditsvc.NewReportService(connAuditRepo, fileAuditRepo, alarmAuditRepo)
+	auditQuerySvc := auditsvc.NewQueryService(
+		authzSvc, connAuditRepo, fileAuditRepo, alarmAuditRepo, auditRepo, peerRepo)
+	dashboardSvc := dashboardsvc.NewService(
+		dashboardRepo, addressBookRepo, connAuditRepo, fileAuditRepo, alarmAuditRepo,
+		users, deps.Config.DataDir)
+
+	auditH := handler.NewAuditHandler(auditReportSvc, auditQuerySvc)
+	dashboardH := handler.NewDashboardHandler(dashboardSvc)
+
 	return &Domain{
 		Tokens:       tokenSvc,
 		Login:        loginSvc,
@@ -156,6 +184,8 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 		Strategy:     strategyH,
 		RbacAPI:      rbacH,
 		UserGroups:   userGroupH,
+		Audit:        auditH,
+		Dashboard:    dashboardH,
 		Auth:         authH,
 		Oidc:         oidcH,
 		User:         userH,
