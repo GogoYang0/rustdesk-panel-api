@@ -275,16 +275,19 @@ const (
 	StrategyAssignmentsParamsTargetTypeUser        StrategyAssignmentsParamsTargetType = "user"
 )
 
-// AbPeer 地址簿 peer 行（findOrCreatePeer 自动建）。
+// AbPeer 地址簿 peer 行（findOrCreatePeer 自动建）；username/hostname/ platform 为 sysinfo 反查的客户端兼容字段（platform 按 os 前段 映射 Windows|Linux|Mac OS|Android，缺省空串）。
 type AbPeer struct {
 	AddressBookGuid *string  `json:"address_book_guid,omitempty"`
 	Alias           *string  `json:"alias,omitempty"`
 	DeviceId        string   `json:"device_id"`
 	Guid            string   `json:"guid"`
 	Hash            *string  `json:"hash,omitempty"`
+	Hostname        *string  `json:"hostname,omitempty"`
 	Note            *string  `json:"note,omitempty"`
 	Password        *string  `json:"password,omitempty"`
+	Platform        *string  `json:"platform,omitempty"`
 	Tags            []string `json:"tags"`
+	Username        *string  `json:"username,omitempty"`
 }
 
 // AbPeerList defines model for AbPeerList.
@@ -753,7 +756,7 @@ type DashboardTrends struct {
 
 // DeleteUserGroupResult defines model for DeleteUserGroupResult.
 type DeleteUserGroupResult struct {
-	// DeletedRuleCount M2 恒 0（address_book_rules 属 M3）
+	// DeletedRuleCount 级联删除的地址簿共享规则数
 	DeletedRuleCount int `json:"deleted_rule_count"`
 
 	// MovedUserCount 回落默认组的成员数
@@ -1554,6 +1557,7 @@ type SysinfoRequest struct {
 
 // UpdateBookProfileRequest custom 书 profile 更新（owner 复核；至少一键否则 400）。
 type UpdateBookProfileRequest struct {
+	Guid string `json:"guid"`
 	Info *struct {
 		Password *string `json:"password,omitempty"`
 	} `json:"info,omitempty"`

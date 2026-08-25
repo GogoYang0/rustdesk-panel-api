@@ -25,7 +25,6 @@ const (
 	msgGroupNotFound  = "User group does not exist"
 	msgGroupNameExist = "User group name already exists" // 409
 	msgDefaultGroup   = "Default user group cannot be deleted"
-	deletedRulesZero  = int64(0) // M2 无 address_book_rules（M3 域）
 )
 
 // Service 用户组域服务。
@@ -34,7 +33,8 @@ type Service struct {
 	db     gormDB
 	groups *repository.UserGroupRepo
 	users  *repository.UserRepo
-	now    func() time.Time // 注入时钟（单测可控）
+	rules  *repository.AddressBookRuleRepo // 删组级联规则计数（M2 批复 #4）
+	now    func() time.Time                // 注入时钟（单测可控）
 }
 
 // gormDB 是事务编排所需的最小接口（*gorm.DB 满足）。
@@ -48,8 +48,9 @@ func NewService(
 	db *gorm.DB,
 	groups *repository.UserGroupRepo,
 	users *repository.UserRepo,
+	rules *repository.AddressBookRuleRepo,
 ) *Service {
-	return &Service{authz: authz, db: db, groups: groups, users: users, now: time.Now}
+	return &Service{authz: authz, db: db, groups: groups, users: users, rules: rules, now: time.Now}
 }
 
 // List GET /api/user-groups：name LIKE、normalizedName ASC + guid ASC
@@ -127,7 +128,9 @@ func (s *Service) Update(ctx context.Context, guid string, req dto.UserGroupUpse
 }
 
 // Delete DELETE /api/user-groups/{guid}：404；默认组禁删 400；事务内
-// 成员回落默认组（moved_user_count）+ 删组；deleted_rule_count 恒 0。
+// 成员回落默认组（moved_user_count）+ 删组级联规则 + 删组；
+// deleted_rule_count 真实计数（M2 批复 #4：address_book_rules.
+// targetGroupId 的显式级联，与成员回落/删组同事务提交）。
 func (s *Service) Delete(ctx context.Context, guid string) (dto.DeleteUserGroupResult, error) {
 	g, err := s.groups.FindByID(ctx, guid)
 	if err != nil {
@@ -144,19 +147,24 @@ func (s *Service) Delete(ctx context.Context, guid string) (dto.DeleteUserGroupR
 	if def, err := s.groups.FindDefault(ctx); err == nil {
 		fallback = def.Guid
 	}
-	var moved int64
+	var moved, deletedRules int64
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		n, err := s.users.DetachMembersTx(tx, guid, fallback)
 		if err != nil {
 			return err
 		}
 		moved = n
+		d, err := s.rules.DeleteByTargetGroupTx(tx, guid)
+		if err != nil {
+			return err
+		}
+		deletedRules = d
 		return s.groups.DeleteTx(tx, guid)
 	})
 	if err != nil {
 		return dto.DeleteUserGroupResult{}, fmt.Errorf("usergroup: delete: %w", err)
 	}
-	return dto.DeleteUserGroupResult{MovedUserCount: moved, DeletedRuleCount: deletedRulesZero}, nil
+	return dto.DeleteUserGroupResult{MovedUserCount: moved, DeletedRuleCount: deletedRules}, nil
 }
 
 // Members GET /api/user-groups/{guid}/users：search LIKE 匹配

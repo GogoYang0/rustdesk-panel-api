@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/entity"
 )
@@ -23,12 +24,15 @@ const (
 // ABPeerFilter 地址簿设备列表过滤（PeersQueryDto：id/alias/tags[]/
 // tagMode + PaginationDto）。
 type ABPeerFilter struct {
-	ID       string   // LIKE deviceId
-	Alias    string   // LIKE alias
+	ID       string   // RustDesk ID LIKE（语义为 peers.id；deviceId 引用 uuid，服务层先反查后走 DeviceUUIDs）
+	Alias    string   // LIKE
 	TagGuids []string // 标签过滤（空 = 不过滤）
 	TagMode  string   // union | intersection（空默认 union）
 	Current  int      // 页码（1 起）
 	PageSize int      // 页大小（0 = 不分页）
+
+	// DeviceUUIDs deviceId IN 过滤（id 反查 uuid 的结果集）。
+	DeviceUUIDs []string
 }
 
 // AddressBookPeerRepo address_book_peers 表仓储。
@@ -127,8 +131,8 @@ func (r *AddressBookPeerRepo) Upsert(ctx context.Context, p *entity.AddressBookP
 // EXISTS/COUNT 关系除法，双方言通用）。
 func applyABPeerFilter(f ABPeerFilter) func(*gorm.DB) *gorm.DB {
 	return func(q *gorm.DB) *gorm.DB {
-		if f.ID != "" {
-			q = q.Where("p.deviceId LIKE ?", like(f.ID))
+		if len(f.DeviceUUIDs) > 0 {
+			q = q.Where("p.deviceId IN ?", f.DeviceUUIDs)
 		}
 		if f.Alias != "" {
 			q = q.Where("p.alias LIKE ?", like(f.Alias))
@@ -149,6 +153,30 @@ func applyABPeerFilter(f ABPeerFilter) func(*gorm.DB) *gorm.DB {
 		}
 		return q
 	}
+}
+
+// ExistsInBook 设备是否已在书内（ab peer add 的重复判定，参考
+// 'Device already exists in the address book'）。
+func (r *AddressBookPeerRepo) ExistsInBook(ctx context.Context, bookGuid, deviceId string) (bool, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&entity.AddressBookPeer{}).
+		Where("addressBookGuid = ? AND deviceId = ?", bookGuid, deviceId).
+		Count(&n).Error
+	return n > 0, err
+}
+
+// DeleteByGuid 删单设备行（调用方先清 peer_tags）。
+func (r *AddressBookPeerRepo) DeleteByGuid(ctx context.Context, guid string) error {
+	return r.db.WithContext(ctx).
+		Where("guid = ?", guid).
+		Delete(&entity.AddressBookPeer{}).Error
+}
+
+// UpdateColumns 按列更新（ab peer 编辑：hash/password/alias/note/updatedAt）。
+func (r *AddressBookPeerRepo) UpdateColumns(ctx context.Context, guid string, updates map[string]any) error {
+	return r.db.WithContext(ctx).Model(&entity.AddressBookPeer{}).
+		Where("guid = ?", guid).
+		Updates(updates).Error
 }
 
 // ListByBook 书内设备分页（GET ab/peers 底座；排序 deviceId ASC +
@@ -179,11 +207,80 @@ func (r *AddressBookPeerRepo) ListByBook(ctx context.Context, bookGuid string, f
 // DeleteByBook 删书内全部设备及其标签关联（legacy POST ab 全删全插的
 // 删半边；事务显式级联，不依赖 FK）。
 func (r *AddressBookPeerRepo) DeleteByBook(ctx context.Context, bookGuid string) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("DELETE FROM address_book_peer_tags WHERE peerGuid IN"+
-			" (SELECT guid FROM address_book_peers WHERE addressBookGuid = ?)", bookGuid).Error; err != nil {
-			return err
+	return r.DeleteByBookTx(r.db.WithContext(ctx), bookGuid)
+}
+
+// DeleteByBookTx legacy 事务版删半边（外层事务由服务层编排）：
+// peer_tags → ab_peers。
+func (r *AddressBookPeerRepo) DeleteByBookTx(tx *gorm.DB, bookGuid string) error {
+	if err := tx.Exec("DELETE FROM address_book_peer_tags WHERE peerGuid IN"+
+		" (SELECT guid FROM address_book_peers WHERE addressBookGuid = ?)", bookGuid).Error; err != nil {
+		return err
+	}
+	return tx.Where("addressBookGuid = ?", bookGuid).Delete(&entity.AddressBookPeer{}).Error
+}
+
+// InsertTagTx legacy 事务内按名幂等建标签（color 缺省 0；UK 冲突重查）。
+func (r *AddressBookPeerRepo) InsertTagTx(tx *gorm.DB, bookGuid, name string, color uint32) (*entity.AddressBookTag, error) {
+	var tag entity.AddressBookTag
+	err := tx.Where("addressBookGuid = ? AND name = ?", bookGuid, name).First(&tag).Error
+	if err == nil {
+		return &tag, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	fresh := &entity.AddressBookTag{
+		Guid:            uuid.New().String(),
+		AddressBookGuid: bookGuid,
+		Name:            name,
+		Color:           color,
+		CreatedAt:       time.Now(),
+	}
+	if err := tx.Create(fresh).Error; err != nil {
+		var existing entity.AddressBookTag
+		if qErr := tx.Where("addressBookGuid = ? AND name = ?", bookGuid, name).First(&existing).Error; qErr == nil {
+			return &existing, nil
 		}
-		return tx.Where("addressBookGuid = ?", bookGuid).Delete(&entity.AddressBookPeer{}).Error
-	})
+		return nil, err
+	}
+	return fresh, nil
+}
+
+// InsertPeerTx legacy 事务内建 ab peer 行（deviceId=peers.uuid）。
+func (r *AddressBookPeerRepo) InsertPeerTx(tx *gorm.DB, bookGuid, deviceUUID, hash, alias string) (*entity.AddressBookPeer, error) {
+	now := time.Now()
+	row := &entity.AddressBookPeer{
+		Guid:            uuid.New().String(),
+		AddressBookGuid: bookGuid,
+		DeviceId:        deviceUUID,
+		Hash:            strPtrOf(hash),
+		Password:        nil,
+		Alias:           strPtrOf(alias),
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := tx.Create(row).Error; err != nil {
+		return nil, err
+	}
+	return row, nil
+}
+
+// LinkTagTx 幂等关联设备与标签（复合 PK 冲突忽略，双方言经
+// ON CONFLICT DO NOTHING 表达）。
+func (r *AddressBookPeerRepo) LinkTagTx(tx *gorm.DB, peerGuid, tagGuid string) error {
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&entity.AddressBookPeerTag{
+		PeerGuid:  peerGuid,
+		TagGuid:   tagGuid,
+		CreatedAt: time.Now(),
+	}).Error
+}
+
+// strPtrOf 空串→nil（ab peers 的 hash/alias 列语义：空值落 NULL，
+// 参考行为 row.hash || '' 读侧兜底）。
+func strPtrOf(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

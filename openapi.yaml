@@ -2127,7 +2127,8 @@ paths:
       summary: 删除用户组（user_groups.delete；默认组禁删）
       description: >-
         删除默认组 400；删除时成员回落默认组（moved_user_count），
-        deleted_rule_count M2 恒 0（address_book_rules 属 M3）。
+        同事务级联删除该组的地址簿共享规则（deleted_rule_count 真实
+        计数，M2 批复 #4 于 M3 T05 收口）。
       operationId: deleteUserGroup
       tags: [user-group]
       parameters:
@@ -2684,10 +2685,11 @@ paths:
       tags: [address-book]
       responses:
         "200":
-          description: legacy 载荷（'null' 字符串或对象）
+          description: legacy 载荷（'null' 字符串或对象；空数据返回裸 JSON null）
           content:
             application/json:
-              schema: {}
+              schema:
+                nullable: true
         "401":
           $ref: "#/components/responses/Unauthorized"
         default:
@@ -2707,10 +2709,11 @@ paths:
               $ref: "#/components/schemas/LegacyAbSaveRequest"
       responses:
         "200":
-          description: 保存结果（失败形态 {error}）
+          description: 保存结果（失败形态 {error}；成功返回裸 JSON null）
           content:
             application/json:
-              schema: {}
+              schema:
+                nullable: true
         "401":
           $ref: "#/components/responses/Unauthorized"
         default:
@@ -6012,7 +6015,7 @@ components:
           description: 回落默认组的成员数
         deleted_rule_count:
           type: integer
-          description: M2 恒 0（address_book_rules 属 M3）
+          description: 级联删除的地址簿共享规则数
 
     CreateUserRequest:
       type: object
@@ -6335,7 +6338,10 @@ components:
     UpdateBookProfileRequest:
       type: object
       description: custom 书 profile 更新（owner 复核；至少一键否则 400）。
+      required: [guid]
       properties:
+        guid:
+          type: string
         name:
           type: string
           maxLength: 255
@@ -6476,7 +6482,10 @@ components:
 
     AbPeer:
       type: object
-      description: 地址簿 peer 行（findOrCreatePeer 自动建）。
+      description: >-
+        地址簿 peer 行（findOrCreatePeer 自动建）；username/hostname/
+        platform 为 sysinfo 反查的客户端兼容字段（platform 按 os 前段
+        映射 Windows|Linux|Mac OS|Android，缺省空串）。
       required: [guid, device_id, tags]
       properties:
         guid:
@@ -6497,6 +6506,12 @@ components:
           type: array
           items:
             type: string
+        username:
+          type: string
+        hostname:
+          type: string
+        platform:
+          type: string
 
     AbPeerList:
       type: object

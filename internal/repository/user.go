@@ -147,6 +147,19 @@ func (r *UserRepo) FindByEmail(ctx context.Context, email string) (*entity.User,
 	return &u, nil
 }
 
+// ListForShare 分享候选全量用户（GET /api/ab/shared/{guid}/
+// share-candidates users 侧；name LIKE 匹配 username/displayName，
+// 排序 username ASC）。
+func (r *UserRepo) ListForShare(ctx context.Context, nameLike string) ([]entity.User, error) {
+	rows := make([]entity.User, 0)
+	q := r.publicSelect(ctx)
+	if nameLike != "" {
+		q = q.Where("username LIKE ? OR displayName LIKE ?", like(nameLike), like(nameLike))
+	}
+	err := q.Order("username ASC").Find(&rows).Error
+	return rows, err
+}
+
 // ListAccessibleUsers 非 admin 三源并集（设计事实①）：自己 ∪
 // user_user_permissions 授权用户 ∪ 授权设备组内设备的归属用户；
 // 排序 username ASC（契约）。status 参数仅 admin 分支应用，此处不过滤。

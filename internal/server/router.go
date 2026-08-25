@@ -374,53 +374,55 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 	rt.HandlePolicy(http.MethodGet, "/api/dashboard", rbac.SuperAdminPolicy(), 0, hf(d.Dashboard.Overview))
 	rt.HandlePolicy(http.MethodGet, "/api/dashboard/trends", rbac.SuperAdminPolicy(), 0, hf(d.Dashboard.Trends))
 
-	// ---- M3 契约骨架（T01）：剩余 69 条 501 占位（notImplemented），
-	// T05~T07 逐域替换（user 14 条 T03、审计 9 + 仪表盘 2 条 T04 已
-	// 接真实实现；M3 全量 96 operation）。
-	rt.registerM3Stubs()
+	// ---- M3 契约骨架（T01）：剩余 37 条 501 占位（notImplemented），
+	// T06~T07 逐域替换（user 14 条 T03、审计 9 + 仪表盘 2 条 T04、
+	// 通讯录 32 条 T05 已接真实实现；M3 全量 96 operation）。
+	rt.registerM3Stubs(d)
 }
 
-// registerM3Stubs 注册 M3 剩余骨架端点（69 = 32 ab + 10 servers +
-// 9 nexus + 9 settings + 8 oidc + 1 update；user 14 条 T03 已接真实
-// 实现、审计 9 + 仪表盘 2 条 T04 已接真实实现，另有 2 条静态路由由
+// registerM3Stubs 注册 M3 剩余骨架端点（37 = 10 servers + 9 nexus +
+// 9 settings + 8 oidc + 1 update；user 14 条 T03、审计 9 + 仪表盘 2 条
+// T04、通讯录 32 条 T05 已接真实实现，另有 2 条静态路由由
 // registerStatic 登记——M3 全量 96）。档位与限流参数严格对齐设计
 // §1.3 策略总表——三方一致性测试以本注册声明为路由侧数据源。
-func (rt *Router) registerM3Stubs() {
+func (rt *Router) registerM3Stubs(d *Domain) {
 	stub := notImplemented
+	ab := d.AddressBook
 
-	// ---- 通讯录域（24 端点仅 Auth；8 端点按 share/edit/view 分码）----
-	rt.HandlePolicy(http.MethodGet, "/api/ab", rbac.AuthPolicy(), 0, stub("GET /api/ab"))
-	rt.HandlePolicy(http.MethodPost, "/api/ab", rbac.AuthPolicy(), 0, stub("POST /api/ab"))
-	rt.HandlePolicy(http.MethodPost, "/api/ab/settings", rbac.AuthPolicy(), 0, stub("POST /api/ab/settings"))
-	rt.HandlePolicy(http.MethodGet, "/api/ab/personal", rbac.AuthPolicy(), 0, stub("GET /api/ab/personal"))
-	rt.HandlePolicy(http.MethodPost, "/api/ab/personal", rbac.AuthPolicy(), 0, stub("POST /api/ab/personal"))
-	rt.HandlePolicy(http.MethodGet, "/api/ab/custom/profiles", rbac.AuthPolicy(), 0, stub("GET /api/ab/custom/profiles"))
-	rt.HandlePolicy(http.MethodPost, "/api/ab/custom/add", rbac.AuthPolicy(), 0, stub("POST /api/ab/custom/add"))
-	rt.HandlePolicy(http.MethodPut, "/api/ab/custom/update/profile", rbac.AuthPolicy(), 0, stub("PUT /api/ab/custom/update/profile"))
-	rt.HandlePolicy(http.MethodDelete, "/api/ab/custom", rbac.AuthPolicy(), 0, stub("DELETE /api/ab/custom"))
-	rt.HandlePolicy(http.MethodGet, "/api/ab/shared/profiles", rbac.AuthPolicy(), 0, stub("GET /api/ab/shared/profiles"))
-	rt.HandlePolicy(http.MethodPost, "/api/ab/shared/profiles", rbac.AuthPolicy(), 0, stub("POST /api/ab/shared/profiles"))
-	rt.HandlePolicy(http.MethodGet, "/api/ab/shared/list", rbac.AuthPolicy(), 0, stub("GET /api/ab/shared/list"))
-	rt.HandlePolicy(http.MethodGet, "/api/ab/shared/{guid}/access", rbac.AuthPolicy(), 0, stub("GET /api/ab/shared/{guid}/access"))
-	rt.HandlePolicy(http.MethodGet, "/api/ab/shared/{guid}/share-candidates", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, stub("GET /api/ab/shared/{guid}/share-candidates"))
-	rt.HandlePolicy(http.MethodPost, "/api/ab/shared/add", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, stub("POST /api/ab/shared/add"))
-	rt.HandlePolicy(http.MethodPut, "/api/ab/shared/update/profile", rbac.PermPolicy(rbac.CodeAddressBooksEdit), 0, stub("PUT /api/ab/shared/update/profile"))
-	rt.HandlePolicy(http.MethodDelete, "/api/ab/shared", rbac.PermPolicy(rbac.CodeAddressBooksEdit), 0, stub("DELETE /api/ab/shared"))
-	rt.HandlePolicy(http.MethodGet, "/api/ab/peers", rbac.AuthPolicy(), 0, stub("GET /api/ab/peers"))
-	rt.HandlePolicy(http.MethodPost, "/api/ab/peers", rbac.AuthPolicy(), 0, stub("POST /api/ab/peers"))
-	rt.HandlePolicy(http.MethodGet, "/api/ab/tags/{guid}", rbac.AuthPolicy(), 0, stub("GET /api/ab/tags/{guid}"))
-	rt.HandlePolicy(http.MethodPost, "/api/ab/tags/{guid}", rbac.AuthPolicy(), 0, stub("POST /api/ab/tags/{guid}"))
-	rt.HandlePolicy(http.MethodPost, "/api/ab/peer/add/{guid}", rbac.AuthPolicy(), 0, stub("POST /api/ab/peer/add/{guid}"))
-	rt.HandlePolicy(http.MethodPut, "/api/ab/peer/update/{guid}", rbac.AuthPolicy(), 0, stub("PUT /api/ab/peer/update/{guid}"))
-	rt.HandlePolicy(http.MethodDelete, "/api/ab/peer/{guid}", rbac.AuthPolicy(), 0, stub("DELETE /api/ab/peer/{guid}"))
-	rt.HandlePolicy(http.MethodPost, "/api/ab/tag/add/{guid}", rbac.AuthPolicy(), 0, stub("POST /api/ab/tag/add/{guid}"))
-	rt.HandlePolicy(http.MethodPut, "/api/ab/tag/rename/{guid}", rbac.AuthPolicy(), 0, stub("PUT /api/ab/tag/rename/{guid}"))
-	rt.HandlePolicy(http.MethodPut, "/api/ab/tag/update/{guid}", rbac.AuthPolicy(), 0, stub("PUT /api/ab/tag/update/{guid}"))
-	rt.HandlePolicy(http.MethodDelete, "/api/ab/tag/{guid}", rbac.AuthPolicy(), 0, stub("DELETE /api/ab/tag/{guid}"))
-	rt.HandlePolicy(http.MethodGet, "/api/ab/rules", rbac.PermPolicy(rbac.CodeAddressBooksView), 0, stub("GET /api/ab/rules"))
-	rt.HandlePolicy(http.MethodPost, "/api/ab/rule", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, stub("POST /api/ab/rule"))
-	rt.HandlePolicy(http.MethodPatch, "/api/ab/rule", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, stub("PATCH /api/ab/rule"))
-	rt.HandlePolicy(http.MethodDelete, "/api/ab/rules", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, stub("DELETE /api/ab/rules"))
+	// ---- 通讯录域（M3 T05 实现；24 端点仅 Auth，8 端点按
+	// share/edit/view 分码——权限模型 owner/规则并集在 service 复核）----
+	rt.HandlePolicy(http.MethodGet, "/api/ab", rbac.AuthPolicy(), 0, hf(ab.GetLegacy))
+	rt.HandlePolicy(http.MethodPost, "/api/ab", rbac.AuthPolicy(), 0, hf(ab.UpdateLegacy))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/settings", rbac.AuthPolicy(), 0, hf(ab.Settings))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/personal", rbac.AuthPolicy(), 0, hf(ab.PersonalGet))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/personal", rbac.AuthPolicy(), 0, hf(ab.PersonalPost))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/custom/profiles", rbac.AuthPolicy(), 0, hf(ab.CustomProfilesGet))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/custom/add", rbac.AuthPolicy(), 0, hf(ab.CustomAdd))
+	rt.HandlePolicy(http.MethodPut, "/api/ab/custom/update/profile", rbac.AuthPolicy(), 0, hf(ab.CustomUpdate))
+	rt.HandlePolicy(http.MethodDelete, "/api/ab/custom", rbac.AuthPolicy(), 0, hf(ab.CustomDelete))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/shared/profiles", rbac.AuthPolicy(), 0, hf(ab.SharedProfilesGet))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/shared/profiles", rbac.AuthPolicy(), 0, hf(ab.SharedProfilesPost))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/shared/list", rbac.AuthPolicy(), 0, hf(ab.SharedList))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/shared/{guid}/access", rbac.AuthPolicy(), 0, hf(ab.SharedAccess))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/shared/{guid}/share-candidates", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, hf(ab.ShareCandidates))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/shared/add", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, hf(ab.SharedAdd))
+	rt.HandlePolicy(http.MethodPut, "/api/ab/shared/update/profile", rbac.PermPolicy(rbac.CodeAddressBooksEdit), 0, hf(ab.SharedUpdate))
+	rt.HandlePolicy(http.MethodDelete, "/api/ab/shared", rbac.PermPolicy(rbac.CodeAddressBooksEdit), 0, hf(ab.SharedDelete))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/peers", rbac.AuthPolicy(), 0, hf(ab.PeersGet))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/peers", rbac.AuthPolicy(), 0, hf(ab.PeersPost))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/tags/{guid}", rbac.AuthPolicy(), 0, hf(ab.TagsGet))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/tags/{guid}", rbac.AuthPolicy(), 0, hf(ab.TagsReplace))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/peer/add/{guid}", rbac.AuthPolicy(), 0, hf(ab.PeerAdd))
+	rt.HandlePolicy(http.MethodPut, "/api/ab/peer/update/{guid}", rbac.AuthPolicy(), 0, hf(ab.PeerUpdate))
+	rt.HandlePolicy(http.MethodDelete, "/api/ab/peer/{guid}", rbac.AuthPolicy(), 0, hf(ab.PeerDelete))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/tag/add/{guid}", rbac.AuthPolicy(), 0, hf(ab.TagAdd))
+	rt.HandlePolicy(http.MethodPut, "/api/ab/tag/rename/{guid}", rbac.AuthPolicy(), 0, hf(ab.TagRename))
+	rt.HandlePolicy(http.MethodPut, "/api/ab/tag/update/{guid}", rbac.AuthPolicy(), 0, hf(ab.TagUpdate))
+	rt.HandlePolicy(http.MethodDelete, "/api/ab/tag/{guid}", rbac.AuthPolicy(), 0, hf(ab.TagDelete))
+	rt.HandlePolicy(http.MethodGet, "/api/ab/rules", rbac.PermPolicy(rbac.CodeAddressBooksView), 0, hf(ab.RulesList))
+	rt.HandlePolicy(http.MethodPost, "/api/ab/rule", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, hf(ab.RuleCreate))
+	rt.HandlePolicy(http.MethodPatch, "/api/ab/rule", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, hf(ab.RuleUpdate))
+	rt.HandlePolicy(http.MethodDelete, "/api/ab/rules", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, hf(ab.RulesDelete))
 
 	// ---- 服务器域（经 agent 转发，五码分档）----
 	rt.HandlePolicy(http.MethodGet, "/api/servers", rbac.PermPolicy(rbac.CodeServersView), 0, stub("GET /api/servers"))

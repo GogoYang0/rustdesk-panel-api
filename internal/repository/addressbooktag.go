@@ -79,3 +79,58 @@ func (r *AddressBookTagRepo) ListByBook(ctx context.Context, bookGuid string) ([
 		Find(&out).Error
 	return out, err
 }
+
+// FindByBookAndName 书内按名定位标签（add 同名 409 'Tag already
+// exists'、rename 冲突 'New tag name already exists'）。
+func (r *AddressBookTagRepo) FindByBookAndName(ctx context.Context, bookGuid, name string) (*entity.AddressBookTag, error) {
+	var tag entity.AddressBookTag
+	err := r.db.WithContext(ctx).
+		Where("addressBookGuid = ? AND name = ?", bookGuid, name).
+		First(&tag).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &tag, nil
+}
+
+// TagColorInput 全量替换的标签行（POST /api/ab/tags/{guid}）。
+type TagColorInput struct {
+	Name  string
+	Color uint32
+}
+
+// ReplaceBookTagsTx 书内标签全量替换（事务：清书内 peer_tags →
+// 清 tags → 按入参重建）。
+func (r *AddressBookTagRepo) ReplaceBookTagsTx(tx *gorm.DB, bookGuid string, tags []TagColorInput) error {
+	if err := tx.Exec("DELETE FROM address_book_peer_tags WHERE peerGuid IN"+
+		" (SELECT guid FROM address_book_peers WHERE addressBookGuid = ?)", bookGuid).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("addressBookGuid = ?", bookGuid).
+		Delete(&entity.AddressBookTag{}).Error; err != nil {
+		return err
+	}
+	now := time.Now()
+	for _, t := range tags {
+		if err := tx.Create(&entity.AddressBookTag{
+			Guid:            uuid.New().String(),
+			AddressBookGuid: bookGuid,
+			Name:            t.Name,
+			Color:           t.Color,
+			CreatedAt:       now,
+		}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DeleteByGuid 删单标签（调用方先清 peer_tags）。
+func (r *AddressBookTagRepo) DeleteByGuid(ctx context.Context, guid string) error {
+	return r.db.WithContext(ctx).
+		Where("guid = ?", guid).
+		Delete(&entity.AddressBookTag{}).Error
+}

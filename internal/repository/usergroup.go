@@ -66,3 +66,15 @@ func (r *UserGroupRepo) ListPaged(ctx context.Context, name string, q Query) ([]
 func (r *UserGroupRepo) DeleteTx(tx *gorm.DB, guid string) error {
 	return tx.Where("guid = ?", guid).Delete(&entity.UserGroup{}).Error
 }
+
+// ListForShare 分享候选全量用户组（GET /api/ab/shared/{guid}/
+// share-candidates groups 侧；name LIKE，排序 name ASC）。
+func (r *UserGroupRepo) ListForShare(ctx context.Context, nameLike string) ([]entity.UserGroup, error) {
+	out := make([]entity.UserGroup, 0)
+	q := r.db.WithContext(ctx).Model(&entity.UserGroup{})
+	if nameLike != "" {
+		q = q.Where("name LIKE ?", like(nameLike))
+	}
+	err := q.Order("name ASC").Find(&out).Error
+	return out, err
+}
