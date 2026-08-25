@@ -8,6 +8,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -233,6 +234,79 @@ func (r *PeerRepo) FillNoteIfEmpty(ctx context.Context, uuid, note string) error
 	return r.db.WithContext(ctx).Model(&entity.Peer{}).
 		Where("uuid = ? AND (note IS NULL OR note = '')", uuid).
 		Update("note", note).Error
+}
+
+// FindOrCreateByID legacy findOrCreatePeer 底座（M3 事实⑦）：按 peers.id
+// 定位设备；未命中自动建行（uuid 随机 v4、ver=0、modifiedAt=0、心跳空、
+// status 走 DB 默认 1）。适用于 IP 直连设备与未心跳的数字 ID 设备。
+func (r *PeerRepo) FindOrCreateByID(ctx context.Context, id string) (*entity.Peer, error) {
+	var p entity.Peer
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(&p).Error
+	if err == nil {
+		return &p, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	now := time.Now()
+	fresh := &entity.Peer{
+		UUID:       uuid.New().String(),
+		ID:         id,
+		Ver:        0,
+		ModifiedAt: 0,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	if err := r.db.WithContext(ctx).Create(fresh).Error; err != nil {
+		// 并发竞态兜底：重查既有行。
+		var existing entity.Peer
+		if qErr := r.db.WithContext(ctx).Where("id = ?", id).First(&existing).Error; qErr == nil {
+			return &existing, nil
+		}
+		return nil, err
+	}
+	return fresh, nil
+}
+
+// FindUUIDsByIDLike 按 RustDesk ID 模糊匹配返回 uuid 集合（ab peers
+// 列表的 id 过滤底座：ab_peers.deviceId 引用 peers.uuid，先由 id
+// 反查 uuid 再以 IN 过滤）。
+func (r *PeerRepo) FindUUIDsByIDLike(ctx context.Context, idLike string) ([]string, error) {
+	out := make([]string, 0)
+	err := r.db.WithContext(ctx).Model(&entity.Peer{}).
+		Where("id LIKE ?", like(idLike)).
+		Pluck("uuid", &out).Error
+	return out, err
+}
+
+// FindOrCreateByIDTx legacy 事务版 findOrCreatePeer（POST /api/ab
+// 全删全插事务内使用，语义同 FindOrCreateByID）。
+func (r *PeerRepo) FindOrCreateByIDTx(tx *gorm.DB, id string) (*entity.Peer, error) {
+	var p entity.Peer
+	err := tx.Where("id = ?", id).First(&p).Error
+	if err == nil {
+		return &p, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	now := time.Now()
+	fresh := &entity.Peer{
+		UUID:       uuid.New().String(),
+		ID:         id,
+		Ver:        0,
+		ModifiedAt: 0,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	if err := tx.Create(fresh).Error; err != nil {
+		var existing entity.Peer
+		if qErr := tx.Where("id = ?", id).First(&existing).Error; qErr == nil {
+			return &existing, nil
+		}
+		return nil, err
+	}
+	return fresh, nil
 }
 
 // DeleteWithConns 事务删除设备并显式级联删除 active_connections

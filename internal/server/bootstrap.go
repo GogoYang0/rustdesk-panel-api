@@ -7,6 +7,7 @@ import (
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/repository"
 	auditsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/audit"
 	authsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/auth"
+	absvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/addressbook"
 	dashboardsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/dashboard"
 	devicesvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/device"
 	devicegroupsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/devicegroup"
@@ -52,6 +53,10 @@ type Domain struct {
 	// 聚合与趋势（双端点 SuperAdmin）。
 	Audit     *handler.AuditHandler
 	Dashboard *handler.DashboardHandler
+
+	// 通讯录域（M3 T05）：legacy 双端点（兼容怪癖三件套）+ settings/
+	// personal/custom/shared profiles + peers/tags/peer/tag + rules。
+	AddressBook *handler.AddressBookHandler
 
 	Auth *handler.AuthHandler
 	Oidc *handler.OidcHandler
@@ -116,7 +121,15 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 
 	heartbeatSvc := devicesvc.NewHeartbeatService(
 		peerRepo, connsRepo, strategyRepo, users, deviceGroupRepo, disconnects, deps.Logger)
-	sysinfoSvc := devicesvc.NewSysinfoService(peerRepo, sysinfoRepo, deviceGroupRepo, deps.Logger)
+	// sysinfo 联动仓储（preset-address-book-*，M2 批复 #3 / M3 T05）：
+	// owner 锚定超管（AdminUsername）名下 findOrCreate custom 书。
+	sysinfoSvc := devicesvc.NewSysinfoService(
+		peerRepo, sysinfoRepo, deviceGroupRepo, users,
+		repository.NewAddressBookRepo(deps.DB),
+		repository.NewAddressBookPeerRepo(deps.DB),
+		repository.NewAddressBookTagRepo(deps.DB),
+		repository.NewAddressBookPeerTagRepo(deps.DB),
+		deps.Config.AdminUsername, deps.Logger)
 	querySvc := devicesvc.NewQueryService(peerRepo, sysinfoRepo, users, deviceGroupRepo, strategyRepo)
 	adminSvc := devicesvc.NewAdminService(
 		authzSvc, peerRepo, sysinfoRepo, users, deviceGroupRepo, strategyRepo, disconnects)
@@ -143,7 +156,7 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 
 	roleSvc := rbacsvc.NewRoleService(authzSvc, deps.DB, roleRepo, rolePermRepo, assignmentRepo, asgGroupRepo, auditRepo)
 	userRoleSvc := rbacsvc.NewUserRoleService(authzSvc, deps.DB, roleRepo, rolePermRepo, assignmentRepo, asgGroupRepo, users, deviceGroupRepo, auditRepo)
-	userGroupSvc := usergroupsvc.NewService(authzSvc, deps.DB, groups, users)
+	userGroupSvc := usergroupsvc.NewService(authzSvc, deps.DB, groups, users, repository.NewAddressBookRuleRepo(deps.DB))
 	rbacH := handler.NewRbacHandler(authzSvc, roleSvc, userRoleSvc)
 	userGroupH := handler.NewUserGroupHandler(userGroupSvc)
 
@@ -167,6 +180,27 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	auditH := handler.NewAuditHandler(auditReportSvc, auditQuerySvc)
 	dashboardH := handler.NewDashboardHandler(dashboardSvc)
 
+	// 通讯录域（M3 T05，事实⑦）：权限判定收敛 PermissionService；
+	// 书级写路径（custom/shared 建改删）与规则 CRUD 在 RuleService；
+	// legacy 双端点独立服务（兼容怪癖三件套）；设备/标签子服务
+	// 分立（peer/tag）。sysinfo 联动（preset-address-book-*）复用
+	// 同一批仓储（M2 批复 #3）。
+	abRuleRepo := repository.NewAddressBookRuleRepo(deps.DB)
+	abPeerRepo := repository.NewAddressBookPeerRepo(deps.DB)
+	abTagRepo := repository.NewAddressBookTagRepo(deps.DB)
+	abPeerTagRepo := repository.NewAddressBookPeerTagRepo(deps.DB)
+
+	abPerms := absvc.NewPermissionService(addressBookRepo, abRuleRepo, users)
+	abLegacySvc := absvc.NewLegacyService(
+		deps.DB, addressBookRepo, abPeerRepo, abTagRepo, abPeerTagRepo,
+		peerRepo, sysinfoRepo, abPerms)
+	abBookSvc := absvc.NewBookService(addressBookRepo, abRuleRepo, users, abPerms, abLegacySvc)
+	abRuleSvc := absvc.NewRuleService(deps.DB, addressBookRepo, abRuleRepo, users, groups, abPerms)
+	abPeerSvc := absvc.NewPeerService(
+		addressBookRepo, abPeerRepo, abPeerTagRepo, abTagRepo, peerRepo, sysinfoRepo, abPerms)
+	abTagSvc := absvc.NewTagService(deps.DB, abTagRepo, abPeerTagRepo, abPerms)
+	abH := handler.NewAddressBookHandler(abBookSvc, abRuleSvc, abPeerSvc, abTagSvc, abLegacySvc)
+
 	return &Domain{
 		Tokens:       tokenSvc,
 		Login:        loginSvc,
@@ -186,6 +220,7 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 		UserGroups:   userGroupH,
 		Audit:        auditH,
 		Dashboard:    dashboardH,
+		AddressBook:  abH,
 		Auth:         authH,
 		Oidc:         oidcH,
 		User:         userH,

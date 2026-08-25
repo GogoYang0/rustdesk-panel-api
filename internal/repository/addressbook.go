@@ -8,6 +8,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/entity"
@@ -28,6 +29,14 @@ type AddressBookFilter struct {
 	Note     string // LIKE
 	Current  int    // 页码（1 起）
 	PageSize int    // 页大小（0 = 不分页）
+
+	// ExcludePersonal 排除个人书（shared/custom profiles 契约：
+	// isPersonal=0，事实⑦）。
+	ExcludePersonal bool
+
+	// SharedOnly 共享形态过滤（shared/list 契约：isShared=1 OR
+	// EXTERNAL_GRANT_EXISTS）。
+	SharedOnly bool
 }
 
 // AddressBookRepo address_books 表仓储。
@@ -75,6 +84,12 @@ func accessibleScope(ctx context.Context, r *AddressBookRepo, userGuid string, g
 // 排序 name ASC + guid ASC（契约，事实⑦）。
 func (r *AddressBookRepo) ListAccessible(ctx context.Context, userGuid string, groupGuids []string, f AddressBookFilter) ([]AddressBookWithRule, int64, error) {
 	apply := func(q *gorm.DB) *gorm.DB {
+		if f.ExcludePersonal {
+			q = q.Where("b.isPersonal = 0")
+		}
+		if f.SharedOnly {
+			q = q.Where("(b.isShared = 1 OR " + externalGrantExists + ")")
+		}
 		if f.Name != "" {
 			q = q.Where("b.name LIKE ?", like(f.Name))
 		}
@@ -173,4 +188,103 @@ func (r *AddressBookRepo) Touch(ctx context.Context, guid string, at time.Time) 
 	return r.db.WithContext(ctx).Model(&entity.AddressBook{}).
 		Where("guid = ?", guid).
 		Update("updatedAt", at).Error
+}
+
+// externalGrantExists NOT(EXTERNAL_GRANT_EXISTS) 判定的子查询片段
+// （参考复刻）：该书存在指向「非 owner 本人」的规则——组规则、
+// everyone 规则、给其他用户的规则——即视为存在外部授权。
+const externalGrantExists = "EXISTS (SELECT 1 FROM address_book_rules egr"+
+	" WHERE egr.addressBookGuid = b.guid"+
+	" AND (egr.targetGroupId IS NOT NULL"+
+	" OR egr.targetUserId IS NULL"+
+	" OR egr.targetUserId <> b.owner))"
+
+// ExistsExternalGrant 单书 EXTERNAL_GRANT_EXISTS 判定（custom 定义
+// 反向条件，共享知识 9/事实⑦）。
+func (r *AddressBookRepo) ExistsExternalGrant(ctx context.Context, guid string) (bool, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Table("address_book_rules egr").
+		Joins("JOIN address_books b ON b.guid = egr.addressBookGuid").
+		Where("b.guid = ? AND (egr.targetGroupId IS NOT NULL"+
+			" OR egr.targetUserId IS NULL OR egr.targetUserId <> b.owner)", guid).
+		Count(&n).Error
+	return n > 0, err
+}
+
+// FindCustomOwned 私有自定义书复核（custom/update/delete 复核）：
+// guid + owner + isPersonal=0 + isShared=0 + NOT(EXTERNAL_GRANT_EXISTS)。
+// 未找到返回 ErrNotFound（'Private custom address book does not exist'）。
+func (r *AddressBookRepo) FindCustomOwned(ctx context.Context, guid, owner string) (*entity.AddressBook, error) {
+	var b entity.AddressBook
+	err := r.db.WithContext(ctx).Table("address_books b").
+		Where("b.guid = ? AND b.owner = ? AND b.isPersonal = 0 AND b.isShared = 0"+
+			" AND NOT ("+externalGrantExists+")", guid, owner).
+		First(&b).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+// FindSharedForm 共享形态书复核（shared/update/delete/access 复核）：
+// guid + isPersonal=0 + (isShared=1 OR EXTERNAL_GRANT_EXISTS)。
+// 未找到返回 ErrNotFound。
+func (r *AddressBookRepo) FindSharedForm(ctx context.Context, guid string) (*entity.AddressBook, error) {
+	var b entity.AddressBook
+	err := r.db.WithContext(ctx).Table("address_books b").
+		Where("b.guid = ? AND b.isPersonal = 0"+
+			" AND (b.isShared = 1 OR "+externalGrantExists+")", guid).
+		First(&b).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+// FindOrCreateCustom 按名取/建自定义书（preset-address-book 联动底座，
+// M2 批复 #3）：owner 名下同名 custom 书命中即返回；否则建行
+// （isPersonal=0/isShared=0）。UK 不存在——竞态兜底重查。
+func (r *AddressBookRepo) FindOrCreateCustom(ctx context.Context, owner, name string) (*entity.AddressBook, error) {
+	if b, err := r.FindByName(ctx, owner, name); err == nil {
+		return b, nil
+	} else if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	now := time.Now()
+	fresh := &entity.AddressBook{
+		Guid:      uuid.New().String(),
+		Owner:     owner,
+		Name:      name,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := r.db.WithContext(ctx).Create(fresh).Error; err != nil {
+		if b, qErr := r.FindByName(ctx, owner, name); qErr == nil {
+			return b, nil
+		}
+		return nil, err
+	}
+	return fresh, nil
+}
+
+// DeleteSharedTx 共享书删除（deleteSharedAddressBooks 语义，参考复刻）：
+// 事务内仅删 rules + books（peers/tags 留存为孤儿，与参考一致——
+// 查询均按 addressBookGuid 定位，孤儿行不可达）。
+func (r *AddressBookRepo) DeleteSharedTx(ctx context.Context, guids []string) error {
+	if len(guids) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("addressBookGuid IN ?", guids).
+			Delete(&entity.AddressBookRule{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("guid IN ?", guids).Delete(&entity.AddressBook{}).Error
+	})
 }

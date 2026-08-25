@@ -7,6 +7,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -66,6 +67,14 @@ func (r *AddressBookRuleRepo) DeleteByTargetGroup(ctx context.Context, groupGuid
 		Delete(&entity.AddressBookRule{}).Error
 }
 
+// DeleteByTargetGroupTx 事务版删组规则（M2 批复 #4）：返回实际删除
+// 行数（deleted_rule_count），与成员回落/删组同一事务提交。
+func (r *AddressBookRuleRepo) DeleteByTargetGroupTx(tx *gorm.DB, groupGuid string) (int64, error) {
+	res := tx.Where("targetGroupId = ?", groupGuid).
+		Delete(&entity.AddressBookRule{})
+	return res.RowsAffected, res.Error
+}
+
 // CountByTargetGroup 计某用户组的规则数（删除前计数/确认弹窗）。
 func (r *AddressBookRuleRepo) CountByTargetGroup(ctx context.Context, groupGuid string) (int64, error) {
 	var n int64
@@ -85,6 +94,45 @@ func (r *AddressBookRuleRepo) RulesForUser(ctx context.Context, bookGuid, userGu
 			bookGuid, userGuid, groupGuids).
 		Find(&out).Error
 	return out, err
+}
+
+// ListByBooks 多书规则枚举（GET /api/ab/rules 的 ab 缺省分支底座；
+// 排序 createdAt ASC + guid ASC 确定性输出）。
+func (r *AddressBookRuleRepo) ListByBooks(ctx context.Context, bookGuids []string) ([]entity.AddressBookRule, error) {
+	out := make([]entity.AddressBookRule, 0)
+	if len(bookGuids) == 0 {
+		return out, nil
+	}
+	err := r.db.WithContext(ctx).
+		Where("addressBookGuid IN ?", bookGuids).
+		Order("createdAt ASC, guid ASC").
+		Find(&out).Error
+	return out, err
+}
+
+// FindByBookAndTarget 精确定位规则（createRule 重复判定 409
+// 'This rule already exists'；target 空=IS NULL everyone 语义）。
+func (r *AddressBookRuleRepo) FindByBookAndTarget(ctx context.Context, bookGuid string, targetUserId, targetGroupId *string) (*entity.AddressBookRule, error) {
+	var rule entity.AddressBookRule
+	q := r.db.WithContext(ctx).Where("addressBookGuid = ?", bookGuid)
+	if targetUserId != nil {
+		q = q.Where("targetUserId = ?", *targetUserId)
+	} else {
+		q = q.Where("targetUserId IS NULL")
+	}
+	if targetGroupId != nil {
+		q = q.Where("targetGroupId = ?", *targetGroupId)
+	} else {
+		q = q.Where("targetGroupId IS NULL")
+	}
+	err := q.First(&rule).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &rule, nil
 }
 
 // MaxRuleForUser 规则并集最大值（无命中返回 0；owner 提升
