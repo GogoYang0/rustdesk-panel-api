@@ -5,11 +5,11 @@ import "time"
 // NexusBuild status 取值（轮询状态机：pending/building 参与轮询，
 // 终态由 poller 下载产物后落库）。
 const (
-	NexusStatusPending  = "pending"
-	NexusStatusBuilding = "building"
-	NexusStatusDone     = "done"
-	NexusStatusFailed   = "failed"
-	NexusStatusCanceled = "canceled"
+	NexusStatusPending    = "pending"
+	NexusStatusBuilding   = "building"
+	NexusStatusCompleted  = "completed"
+	NexusStatusFailed     = "failed"
+	NexusStatusCancelled  = "cancelled"
 )
 
 // NexusBuild nexus_builds 表实体：客户端定制构建任务。

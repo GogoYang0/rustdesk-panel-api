@@ -42,6 +42,10 @@ type Config struct {
 	// M3 更新检查渠道（设计事实④/共享知识 19）：stable | nightly。
 	UpdateChannel string `env:"UPDATE_CHANNEL" envDefault:"stable"`
 
+	// M3 nexus 代理上游（设计事实⑤/共享知识 19）：固定代理
+	// api.databk.top；仅测试覆写。NEXUS_UPSTREAM 为空时回落缺省。
+	NexusUpstream string `env:"NEXUS_UPSTREAM" envDefault:"https://api.databk.top"`
+
 	// WebAuthn Relying Party 配置。
 	WebAuthnRPID    string   `env:"WEBAUTHN_RP_ID" envDefault:"localhost"`
 	WebAuthnOrigins []string `env:"WEBAUTHN_ORIGINS" envSeparator:"," envDefault:"http://localhost:8080"`

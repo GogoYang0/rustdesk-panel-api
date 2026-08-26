@@ -424,17 +424,17 @@ func (rt *Router) registerM3Stubs(d *Domain) {
 	rt.HandlePolicy(http.MethodPatch, "/api/ab/rule", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, hf(ab.RuleUpdate))
 	rt.HandlePolicy(http.MethodDelete, "/api/ab/rules", rbac.PermPolicy(rbac.CodeAddressBooksShare), 0, hf(ab.RulesDelete))
 
-	// ---- 服务器域（经 agent 转发，五码分档）----
-	rt.HandlePolicy(http.MethodGet, "/api/servers", rbac.PermPolicy(rbac.CodeServersView), 0, stub("GET /api/servers"))
-	rt.HandlePolicy(http.MethodGet, "/api/servers/{node}/peers", rbac.PermPolicy(rbac.CodeServersView), 0, stub("GET /api/servers/{node}/peers"))
-	rt.HandlePolicy(http.MethodGet, "/api/servers/{node}/sessions", rbac.PermPolicy(rbac.CodeServersView), 0, stub("GET /api/servers/{node}/sessions"))
-	rt.HandlePolicy(http.MethodDelete, "/api/servers/{node}/sessions/{uuid}", rbac.PermPolicy(rbac.CodeServersDisconnect), 0, stub("DELETE /api/servers/{node}/sessions/{uuid}"))
-	rt.HandlePolicy(http.MethodGet, "/api/servers/{node}/services/{service}/config", rbac.PermPolicy(rbac.CodeServersConfig), 0, stub("GET /api/servers/{node}/services/{service}/config"))
-	rt.HandlePolicy(http.MethodPut, "/api/servers/{node}/services/{service}/config", rbac.PermPolicy(rbac.CodeServersConfig), 0, stub("PUT /api/servers/{node}/services/{service}/config"))
-	rt.HandlePolicy(http.MethodGet, "/api/servers/{node}/services/{service}/logs", rbac.PermPolicy(rbac.CodeServersView), 0, stub("GET /api/servers/{node}/services/{service}/logs"))
-	rt.HandlePolicy(http.MethodPost, "/api/servers/{node}/services/{service}/{action}", rbac.PermPolicy(rbac.CodeServersControl), 0, stub("POST /api/servers/{node}/services/{service}/{action}"))
-	rt.HandlePolicy(http.MethodGet, "/api/servers/{node}/bans", rbac.PermPolicy(rbac.CodeServersBan), 0, stub("GET /api/servers/{node}/bans"))
-	rt.HandlePolicy(http.MethodPut, "/api/servers/{node}/bans", rbac.PermPolicy(rbac.CodeServersBan), 0, stub("PUT /api/servers/{node}/bans"))
+	// ---- 服务器域（经 agent 转发，五码分档；T06 接真实实现）----
+	rt.HandlePolicy(http.MethodGet, "/api/servers", rbac.PermPolicy(rbac.CodeServersView), 0, hf(d.ServerMGMT.List))
+	rt.HandlePolicy(http.MethodGet, "/api/servers/{node}/peers", rbac.PermPolicy(rbac.CodeServersView), 0, hf(d.ServerMGMT.Peers))
+	rt.HandlePolicy(http.MethodGet, "/api/servers/{node}/sessions", rbac.PermPolicy(rbac.CodeServersView), 0, hf(d.ServerMGMT.Sessions))
+	rt.HandlePolicy(http.MethodDelete, "/api/servers/{node}/sessions/{uuid}", rbac.PermPolicy(rbac.CodeServersDisconnect), 0, hf(d.ServerMGMT.Disconnect))
+	rt.HandlePolicy(http.MethodGet, "/api/servers/{node}/services/{service}/config", rbac.PermPolicy(rbac.CodeServersConfig), 0, hf(d.ServerMGMT.ServiceConfig))
+	rt.HandlePolicy(http.MethodPut, "/api/servers/{node}/services/{service}/config", rbac.PermPolicy(rbac.CodeServersConfig), 0, hf(d.ServerMGMT.ServiceConfig))
+	rt.HandlePolicy(http.MethodGet, "/api/servers/{node}/services/{service}/logs", rbac.PermPolicy(rbac.CodeServersView), 0, hf(d.ServerMGMT.ServiceLogs))
+	rt.HandlePolicy(http.MethodPost, "/api/servers/{node}/services/{service}/{action}", rbac.PermPolicy(rbac.CodeServersControl), 0, hf(d.ServerMGMT.ServiceAction))
+	rt.HandlePolicy(http.MethodGet, "/api/servers/{node}/bans", rbac.PermPolicy(rbac.CodeServersBan), 0, hf(d.ServerMGMT.Bans))
+	rt.HandlePolicy(http.MethodPut, "/api/servers/{node}/bans", rbac.PermPolicy(rbac.CodeServersBan), 0, hf(d.ServerMGMT.Bans))
 
 	// ---- nexus 域（绑定与构建；POST builds=201 / DELETE=204 特例在 handler 层）----
 	rt.HandlePolicy(http.MethodPost, "/api/nexus/auth/login", rbac.AuthPolicy(), 0, stub("POST /api/nexus/auth/login"))
