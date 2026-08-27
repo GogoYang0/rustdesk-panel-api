@@ -342,10 +342,11 @@ func (r *UserRepo) DeleteWithRelated(ctx context.Context, guid string) error {
 // YYYY-MM-DD 字符串，双方言通用）。
 func (r *UserRepo) CountByDay(ctx context.Context, from, to time.Time) ([]DayCount, error) {
 	out := make([]DayCount, 0)
+	dayExpr := LocalDayExpr(r.db.Name(), "createdAt")
 	err := r.db.WithContext(ctx).Model(&entity.User{}).
-		Select("DATE(createdAt) AS date, COUNT(*) AS count").
+		Select(dayExpr+" AS date, COUNT(*) AS count").
 		Where("createdAt >= ? AND createdAt < ?", from, to).
-		Group("DATE(createdAt)").
+		Group(dayExpr).
 		Order("date ASC").
 		Scan(&out).Error
 	return out, err

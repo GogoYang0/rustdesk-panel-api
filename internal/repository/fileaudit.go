@@ -111,10 +111,11 @@ func (r *FileAuditRepo) CountTodayUpload(ctx context.Context, dayStart time.Time
 // 左闭右开 [from, to)）。
 func (r *FileAuditRepo) CountByDay(ctx context.Context, from, to time.Time) ([]DayCount, error) {
 	out := make([]DayCount, 0)
+	dayExpr := LocalDayExpr(r.db.Name(), "requestedAt")
 	err := r.db.WithContext(ctx).Model(&entity.FileAudit{}).
-		Select("DATE(requestedAt) AS date, COUNT(*) AS count").
+		Select(dayExpr+" AS date, COUNT(*) AS count").
 		Where("requestedAt >= ? AND requestedAt < ?", from, to).
-		Group("DATE(requestedAt)").
+		Group(dayExpr).
 		Order("date ASC").
 		Scan(&out).Error
 	return out, err

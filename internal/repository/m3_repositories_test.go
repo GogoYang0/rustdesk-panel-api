@@ -207,9 +207,11 @@ func TestAuditCountByDay(t *testing.T) {
 	ctx, db := openM3Empty(t)
 	repo := NewConnectionAuditRepo(db)
 	now := time.Now()
-	// 聚合锚点为 UTC 日界：glebarez 将 time.Time 以 UTC 文本落库，
-	// DATE() 解析 UTC 串；MySQL 侧 DSN 默认 loc=UTC 同口径（双方言一致）。
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	// 聚合锚点为"本地日历日"（LocalDayExpr）：dashboard.Trends 以本地
+	// 时区从当日零点起算并生成补零标签，逐日聚合必须同一口径才能对齐
+	// （否则东八区 00:00~08:00 区间的"今日"计数会落到前一天的桶里）。
+	// 此处以本地零点构造窗口，与 Trends 的 from/to 同构。
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
 	// 三行：今晨 01:00、今晨 02:00（同日合并）、昨日 23:00（不计入窗口）。
 	for _, at := range []time.Time{today.Add(time.Hour), today.Add(2 * time.Hour), today.Add(-time.Hour)} {
@@ -237,6 +239,19 @@ func TestAuditCountByDay(t *testing.T) {
 	}
 	if len(rows) != 2 {
 		t.Fatalf("wide rows = %+v, want 2 days", rows)
+	}
+}
+
+// TestLocalDayExprDialects LocalDayExpr 双方言形态锁定：MySQL 侧保持
+// DATE()（会话时区语义），SQLite 侧改为 strftime + 'localtime'
+// （修正 DATE() 按 UTC 解读字面量导致的日界错位）。
+func TestLocalDayExprDialects(t *testing.T) {
+	if got := LocalDayExpr("mysql", "createdAt"); got != "DATE(createdAt)" {
+		t.Errorf("mysql expr = %q, want DATE(createdAt)", got)
+	}
+	want := "strftime('%Y-%m-%d', createdAt, 'localtime')"
+	if got := LocalDayExpr("sqlite", "createdAt"); got != want {
+		t.Errorf("sqlite expr = %q, want %q", got, want)
 	}
 }
 

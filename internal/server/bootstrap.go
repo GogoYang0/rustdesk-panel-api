@@ -1,6 +1,8 @@
 package server
 
 import (
+	"fmt"
+
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/email"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/handler"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/rbac"
@@ -11,7 +13,9 @@ import (
 	dashboardsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/dashboard"
 	devicesvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/device"
 	devicegroupsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/devicegroup"
+	nexussvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/nexus"
 	rbacsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/rbac"
+	servermgmt "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/servermgmt"
 	strategysvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/strategy"
 	usersvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/user"
 	usergroupsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/usergroup"
@@ -57,6 +61,14 @@ type Domain struct {
 	// 通讯录域（M3 T05）：legacy 双端点（兼容怪癖三件套）+ settings/
 	// personal/custom/shared profiles + peers/tags/peer/tag + rules。
 	AddressBook *handler.AddressBookHandler
+
+	// 服务器管理域（M3 T06，事实③）：经 agent 转发 hbbs/hbbr /v1，
+	// 启动校验 RUSTDESK_NODES（失败 fail-fast）。
+	ServerMGMT *handler.ServerMGMTHandler
+
+	// nexus 域（M3 T06，事实⑤）：GitHub 设备码绑定 + 定制构建生命周期
+	// + 产物 safeJoin 下载；后台 10s poller 由 main 启动（Nexus.Start）。
+	Nexus *handler.NexusHandler
 
 	Auth *handler.AuthHandler
 	Oidc *handler.OidcHandler
@@ -201,6 +213,20 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	abTagSvc := absvc.NewTagService(deps.DB, abTagRepo, abPeerTagRepo, abPerms)
 	abH := handler.NewAddressBookHandler(abBookSvc, abRuleSvc, abPeerSvc, abTagSvc, abLegacySvc)
 
+	// 服务器管理域（M3 T06，事实③）：RUSTDESK_NODES 解析校验（失败
+	// fail-fast）；转发客户端 + handler（mutate 审计复用全局 auditSvc）。
+	mgmtNodes, err := servermgmt.ParseNodes(deps.Config.RustdeskNodes)
+	if err != nil {
+		return nil, fmt.Errorf("servermgmt: %w", err)
+	}
+	mgmtClient := servermgmt.NewClient(mgmtNodes, deps.Logger)
+	mgmtH := handler.NewServerMGMTHandler(mgmtClient, auditSvc)
+
+	// nexus 域（M3 T06，事实⑤）：上游代理 + 产物落盘 DATA_DIR/nexus；
+	// 后台 poller 不在此处启动（主流程显式 Nexus.Start，便于 ctx 生命周期）。
+	nexusSvc := nexussvc.NewNexusService(deps.DB, deps.Config.NexusUpstream, deps.Config.DataDir)
+	nexusH := handler.NewNexusHandler(nexusSvc)
+
 	return &Domain{
 		Tokens:       tokenSvc,
 		Login:        loginSvc,
@@ -221,6 +247,8 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 		Audit:        auditH,
 		Dashboard:    dashboardH,
 		AddressBook:  abH,
+		ServerMGMT:   mgmtH,
+		Nexus:        nexusH,
 		Auth:         authH,
 		Oidc:         oidcH,
 		User:         userH,

@@ -18,9 +18,31 @@ import (
 // DayCount 按日聚合行（trends 曲线；Date 为 DATE() 产出的
 // YYYY-MM-DD 字符串，双方言通用——MySQL DATE(datetime(6)) /
 // SQLite DATE(RFC3339 文本) 均可解析）。
+// DayCount trends 逐日聚合行。Date 为本地时区的 YYYY-MM-DD 标签，
+// 与 dashboard.Trends 生成的补零标签同一口径（见 LocalDayExpr 说明）。
 type DayCount struct {
 	Date  string `gorm:"column:date"`
 	Count int64  `gorm:"column:count"`
+}
+
+// LocalDayExpr 构造"按本地时区日期归组"的 SQL 表达式（dialect 感知）。
+//
+// 背景：SQLite 的 DATE(col) 会先把无时区偏移的 DATETIME 字面量按 UTC
+// 解读再取日期；而本仓写入的均为 Go time.Now() 的本地时刻（如
+// "2026-10-10 01:32:46+08:00"）。直接 DATE() 会得到前一天的
+// "2026-10-09"，与 dashboard.Trends 以本地时区生成的补零标签错位，
+// 导致本地时间 00:00~08:00（东八区）区间内"今日"计数恒为 0。
+//
+// 统一修正为：strftime('%Y-%m-%d', col, 'localtime')。该函数把列值
+// 视为 UTC 并加上本地偏移——由于 GORM 写入 SQLite 的是带偏移的字面量，
+// 结果恰好还原为写入时刻的本地日历日，与 Trends 标签一致。
+// MySQL 的 DATE() 已是会话时区语义，无需改写（双方言同构返回
+// YYYY-MM-DD 字符串）。
+func LocalDayExpr(dialector string, column string) string {
+	if dialector == "mysql" {
+		return "DATE(" + column + ")"
+	}
+	return "strftime('%Y-%m-%d', " + column + ", 'localtime')"
 }
 
 // ConnAuditFilter GET /api/audits/conn 过滤（契约
@@ -274,13 +296,15 @@ func (r *ConnectionAuditRepo) CountSuccessFailure(ctx context.Context, since tim
 }
 
 // CountByDay 连接数按日聚合（dashboard trends connectionTrend；
-// DATE(requestedAt) 锚点，from 起始零点、to 终止零点（左闭右开））。
+// requestedAt 锚点、按本地日历日归组，from 起始零点、to 终止零点
+// （左闭右开））。
 func (r *ConnectionAuditRepo) CountByDay(ctx context.Context, from, to time.Time) ([]DayCount, error) {
 	out := make([]DayCount, 0)
+	dayExpr := LocalDayExpr(r.db.Name(), "requestedAt")
 	err := r.db.WithContext(ctx).Model(&entity.ConnectionAudit{}).
-		Select("DATE(requestedAt) AS date, COUNT(*) AS count").
+		Select(dayExpr+" AS date, COUNT(*) AS count").
 		Where("requestedAt >= ? AND requestedAt < ?", from, to).
-		Group("DATE(requestedAt)").
+		Group(dayExpr).
 		Order("date ASC").
 		Scan(&out).Error
 	return out, err
