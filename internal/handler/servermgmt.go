@@ -6,14 +6,26 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
+	panelDTO "github.com/rustdesk-panel/rustdesk-panel-api/internal/dto"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/httpx"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/middleware"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/rbac"
 	mgmt "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/servermgmt"
 )
+
+// 固定文案（共享知识 16，逐字节禁改）：路径/载荷形状违例统一为
+// 'Invalid server management request'（400）。
+const msgInvalidRequest = "Invalid server management request"
+
+// errBansBody 封禁载荷形状错误（文案即固定文案）。
+// nolint:staticcheck // ST1005：固定文案须与契约逐字节一致，不可小写化。
+var errBansBody = errors.New(msgInvalidRequest)
 
 // ServerMGMTHandler 服务器管理域 handler。
 type ServerMGMTHandler struct {
@@ -64,7 +76,8 @@ func (h *ServerMGMTHandler) forward(w http.ResponseWriter, r *http.Request, node
 		return
 	}
 	if mutate && h.audit != nil {
-		h.audit.Record(r.Context(), rbac.AuditRecord{
+		// 审计写入失败不阻断主流程（已由 AuditService 内部记日志）。
+		_ = h.audit.Record(r.Context(), rbac.AuditRecord{
 			ActorUserGuid: actor, TargetType: "server", TargetGuid: nodeID,
 			Action: action, Result: rbac.AuditResultAllowed, AfterState: string(body),
 		})
@@ -111,23 +124,71 @@ func (h *ServerMGMTHandler) Disconnect(w http.ResponseWriter, r *http.Request) {
 
 // ServiceConfig GET|PUT /api/servers/{node}/services/{service}/config。
 func (h *ServerMGMTHandler) ServiceConfig(w http.ResponseWriter, r *http.Request) {
-	path := "/v1/services/" + r.PathValue("service") + "/config"
+	service := r.PathValue("service")
+	if !panelDTO.IsValidService(service) {
+		httpx.Fail(w, http.StatusBadRequest, msgInvalidRequest)
+		return
+	}
+	path := "/v1/services/" + service + "/config"
 	h.forward(w, r, r.PathValue("node"), path, r.Method == http.MethodPut, "service-config")
 }
 
 // ServiceLogs GET /api/servers/{node}/services/{service}/logs。
 func (h *ServerMGMTHandler) ServiceLogs(w http.ResponseWriter, r *http.Request) {
-	path := "/v1/services/" + r.PathValue("service") + "/logs"
+	service := r.PathValue("service")
+	if !panelDTO.IsValidService(service) {
+		httpx.Fail(w, http.StatusBadRequest, msgInvalidRequest)
+		return
+	}
+	path := "/v1/services/" + service + "/logs"
 	h.forward(w, r, r.PathValue("node"), path, false, "service-logs")
 }
 
 // ServiceAction POST /api/servers/{node}/services/{service}/{action}。
 func (h *ServerMGMTHandler) ServiceAction(w http.ResponseWriter, r *http.Request) {
-	path := "/v1/services/" + r.PathValue("service") + "/" + r.PathValue("action")
+	service := r.PathValue("service")
+	action := r.PathValue("action")
+	if !panelDTO.IsValidService(service) || !panelDTO.IsValidAction(action) {
+		httpx.Fail(w, http.StatusBadRequest, msgInvalidRequest)
+		return
+	}
+	path := "/v1/services/" + service + "/" + action
 	h.forward(w, r, r.PathValue("node"), path, true, "service-action")
 }
 
 // Bans GET|PUT /api/servers/{node}/bans。
+//
+// PUT 路径先做载荷形状校验（device_ids ≤10000、ips 标准 IPv4 字面量，
+// openapi ServerBansDto）：违例即 400 固定文案，不触达 agent。
 func (h *ServerMGMTHandler) Bans(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPut {
+		if err := h.validateBansBody(r); err != nil {
+			httpx.Fail(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	h.forward(w, r, r.PathValue("node"), "/v1/bans", r.Method == http.MethodPut, "bans")
+}
+
+// validateBansBody 读取并校验封禁请求体形状（读取后须回填 r.Body，
+// 供 forward 再次透传上游）。
+func (h *ServerMGMTHandler) validateBansBody(r *http.Request) error {
+	if r.Body == nil {
+		return errBansBody
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, int64(mgmt.MaxForwardBody())+1))
+	if err != nil {
+		return errBansBody
+	}
+	_ = r.Body.Close()
+	// 回填请求体：forward 需要原样透传给 agent。
+	r.Body = io.NopCloser(bytes.NewReader(raw))
+	if int64(len(raw)) > int64(mgmt.MaxForwardBody()) {
+		return errBansBody
+	}
+	var bans panelDTO.ServerBansDto
+	if err := json.Unmarshal(raw, &bans); err != nil {
+		return errBansBody
+	}
+	return panelDTO.ValidateBans(&bans)
 }

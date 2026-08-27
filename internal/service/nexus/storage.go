@@ -14,6 +14,10 @@ import (
 // 映射为 400 Invalid path（与 static.FilesHandler 同一安全语义，批复 #8）。
 var ErrInvalidPath = errors.New("invalid path")
 
+// ErrArtifactNotFound 产物不存在或非普通文件（目录/符号链接等）。
+// 映射为 404，避免 os.ReadFile 对目录返回的 EISDIR 泄漏成 500。
+var ErrArtifactNotFound = errors.New("artifact not found")
+
 // Storage 管理 DATA_DIR/nexus 产物布局与 safeJoin 防路径穿越。
 type Storage struct {
 	root string
@@ -59,7 +63,20 @@ func (s *Storage) WriteFile(uuid, filename string, content []byte) error {
 }
 
 // ReadFile 读取落盘产物（已 safeJoin 校验后的绝对路径）。
+//
+// 仅接受普通文件：目录、设备、符号链接等一律映射为 ErrArtifactNotFound
+// （404），杜绝 os.ReadFile 对目录返回 EISDIR 时被上层转成 500。
 func (s *Storage) ReadFile(absPath string) ([]byte, error) {
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrArtifactNotFound
+		}
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, ErrArtifactNotFound
+	}
 	return os.ReadFile(absPath)
 }
 

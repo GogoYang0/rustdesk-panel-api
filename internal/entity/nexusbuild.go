@@ -4,12 +4,18 @@ import "time"
 
 // NexusBuild status 取值（轮询状态机：pending/building 参与轮询，
 // 终态由 poller 下载产物后落库）。
+//
+// 命名以 databk/rustdesk-console 的 nexus 构建状态语义为基准：终态
+// 字面量为 'done' / 'failed' / 'canceled'（美式单 l）——T02 已交付的
+// repository 层与 m3_repositories_test 均按此契约构建，T06 的 poller
+// 与 API 视图对齐之。对外视图枚举（api.NexusBuildViewStatus）按
+// openapi 为 completed/cancelled，两者间映射由视图转换层承担。
 const (
-	NexusStatusPending    = "pending"
-	NexusStatusBuilding   = "building"
-	NexusStatusCompleted  = "completed"
-	NexusStatusFailed     = "failed"
-	NexusStatusCancelled  = "cancelled"
+	NexusStatusPending  = "pending"
+	NexusStatusBuilding = "building"
+	NexusStatusDone     = "done"
+	NexusStatusFailed   = "failed"
+	NexusStatusCanceled = "canceled"
 )
 
 // NexusBuild nexus_builds 表实体：客户端定制构建任务。

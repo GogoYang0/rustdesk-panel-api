@@ -10,14 +10,19 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"path/filepath"
-	"strings"
 
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/api"
+	panelDTO "github.com/rustdesk-panel/rustdesk-panel-api/internal/dto"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/httpx"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/middleware"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/rbac"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/service/nexus"
+)
+
+// 固定文案（共享知识 16，逐字节禁改）。
+const (
+	// msgInvalidPath safeJoin 穿越面 / 文件名白名单未通过 → 400。
+	msgInvalidPath = "Invalid path"
 )
 
 // NexusHandler nexus 域 handler。
@@ -111,6 +116,11 @@ func (h *NexusHandler) CreateBuild(w http.ResponseWriter, r *http.Request) {
 		httpx.ErrBadRequest(w, "Invalid JSON body")
 		return
 	}
+	// 形状复核（openapi enum）：违例在上游调用前即 400。
+	if err := panelDTO.ValidateGenerate(&dto); err != nil {
+		rbac.WriteStatusError(w, err)
+		return
+	}
 	view, err := h.svc.CreateBuild(r.Context(), actor, dto)
 	if err != nil {
 		rbac.WriteStatusError(w, err)
@@ -139,8 +149,8 @@ func (h *NexusHandler) CancelBuild(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	uuid := r.PathValue("uuid")
-	if err := h.svc.CancelBuild(r.Context(), actor, uuid); err != nil {
+	buildUuid := r.PathValue("uuid")
+	if err := h.svc.CancelBuild(r.Context(), actor, buildUuid); err != nil {
 		rbac.WriteStatusError(w, err)
 		return
 	}
@@ -153,8 +163,8 @@ func (h *NexusHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	uuid := r.PathValue("uuid")
-	files, err := h.svc.ListFiles(r.Context(), actor, uuid)
+	buildUuid := r.PathValue("uuid")
+	files, err := h.svc.ListFiles(r.Context(), actor, buildUuid)
 	if err != nil {
 		rbac.WriteStatusError(w, err)
 		return
@@ -163,49 +173,30 @@ func (h *NexusHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 // Download GET /api/nexus/builds/{uuid}/files/{filename}：产物下载（safeJoin）。
+//
+// 文件名白名单（批复 #8）：先经 panelDTO.SanitizeFilename 精确过滤，仅接受
+// ^[A-Za-z0-9._-]{1,255}$ 的字面量——从构造上排除 ".."、绝对路径、
+// CR/LF/引号等首部注入字符。未通过 → 400 Invalid path（固定文案，
+// 共享知识 16）。storage.SafeJoin 仍为第二道防线（纵深防御）。
 func (h *NexusHandler) Download(w http.ResponseWriter, r *http.Request) {
 	actor, ok := h.ident(w, r)
 	if !ok {
 		return
 	}
-	uuid := r.PathValue("uuid")
-	filename := r.PathValue("filename")
-	// safeJoin 防穿越：文件名含 .. 段或绝对路径 → 400 Invalid path（批复 #8）。
-	if filename == "" || strings.Contains(filename, "..") || filepath.IsAbs(filename) {
-		httpx.Fail(w, http.StatusBadRequest, "Invalid path")
+	buildUuid := r.PathValue("uuid")
+	safeName := panelDTO.SanitizeFilename(r.PathValue("filename"))
+	if safeName == "" {
+		httpx.Fail(w, http.StatusBadRequest, msgInvalidPath)
 		return
 	}
-	data, err := h.svc.DownloadFile(r.Context(), actor, uuid, filename)
+	data, err := h.svc.DownloadFile(r.Context(), actor, buildUuid, safeName)
 	if err != nil {
 		if errors.Is(err, nexus.ErrInvalidPath) {
-			httpx.Fail(w, http.StatusBadRequest, "Invalid path")
+			httpx.Fail(w, http.StatusBadRequest, msgInvalidPath)
 			return
 		}
 		rbac.WriteStatusError(w, err)
 		return
 	}
-	// 文件名白名单剥离 CR/LF/引号（批复 #8：消除 header 注入面）。
-	httpx.WriteBinary(w, sanitizeHeaderFilename(filename), data)
-}
-
-// sanitizeHeaderFilename 剥离响应头注入字符（CR/LF/引号/控制字符）。
-func sanitizeHeaderFilename(name string) string {
-	var b strings.Builder
-	b.Grow(len(name))
-	for _, r := range name {
-		switch r {
-		case '\r', '\n', '"', '\\', '/', ';':
-			continue
-		default:
-			if r < 0x20 {
-				continue
-			}
-			b.WriteRune(r)
-		}
-	}
-	out := b.String()
-	if out == "" {
-		return "download"
-	}
-	return out
+	httpx.WriteBinary(w, safeName, data)
 }

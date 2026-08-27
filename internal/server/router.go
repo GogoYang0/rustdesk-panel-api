@@ -437,15 +437,15 @@ func (rt *Router) registerM3Stubs(d *Domain) {
 	rt.HandlePolicy(http.MethodPut, "/api/servers/{node}/bans", rbac.PermPolicy(rbac.CodeServersBan), 0, hf(d.ServerMGMT.Bans))
 
 	// ---- nexus 域（绑定与构建；POST builds=201 / DELETE=204 特例在 handler 层）----
-	rt.HandlePolicy(http.MethodPost, "/api/nexus/auth/login", rbac.AuthPolicy(), 0, stub("POST /api/nexus/auth/login"))
-	rt.HandlePolicy(http.MethodGet, "/api/nexus/auth/status", rbac.AuthPolicy(), 0, stub("GET /api/nexus/auth/status"))
-	rt.HandlePolicy(http.MethodGet, "/api/nexus/auth/bind-status", rbac.AuthPolicy(), 0, stub("GET /api/nexus/auth/bind-status"))
-	rt.HandlePolicy(http.MethodDelete, "/api/nexus/auth/bind", rbac.AuthPolicy(), 0, stub("DELETE /api/nexus/auth/bind"))
-	rt.HandlePolicy(http.MethodPost, "/api/nexus/builds", rbac.AuthPolicy(), 0, stub("POST /api/nexus/builds"))
-	rt.HandlePolicy(http.MethodGet, "/api/nexus/builds", rbac.AuthPolicy(), 0, stub("GET /api/nexus/builds"))
-	rt.HandlePolicy(http.MethodDelete, "/api/nexus/builds/{uuid}", rbac.AuthPolicy(), 0, stub("DELETE /api/nexus/builds/{uuid}"))
-	rt.HandlePolicy(http.MethodGet, "/api/nexus/builds/{uuid}/files", rbac.AuthPolicy(), 0, stub("GET /api/nexus/builds/{uuid}/files"))
-	rt.HandlePolicy(http.MethodGet, "/api/nexus/builds/{uuid}/files/{filename}", rbac.AuthPolicy(), 0, stub("GET /api/nexus/builds/{uuid}/files/{filename}"))
+	rt.HandlePolicy(http.MethodPost, "/api/nexus/auth/login", rbac.AuthPolicy(), 0, hf(d.Nexus.Login))
+	rt.HandlePolicy(http.MethodGet, "/api/nexus/auth/status", rbac.AuthPolicy(), 0, hf(d.Nexus.Status))
+	rt.HandlePolicy(http.MethodGet, "/api/nexus/auth/bind-status", rbac.AuthPolicy(), 0, hf(d.Nexus.BindStatus))
+	rt.HandlePolicy(http.MethodDelete, "/api/nexus/auth/bind", rbac.AuthPolicy(), 0, hf(d.Nexus.Unbind))
+	rt.HandlePolicy(http.MethodPost, "/api/nexus/builds", rbac.AuthPolicy(), 0, hf(d.Nexus.CreateBuild))
+	rt.HandlePolicy(http.MethodGet, "/api/nexus/builds", rbac.AuthPolicy(), 0, hf(d.Nexus.ListBuilds))
+	rt.HandlePolicy(http.MethodDelete, "/api/nexus/builds/{uuid}", rbac.AuthPolicy(), 0, hf(d.Nexus.CancelBuild))
+	rt.HandlePolicy(http.MethodGet, "/api/nexus/builds/{uuid}/files", rbac.AuthPolicy(), 0, hf(d.Nexus.ListFiles))
+	rt.HandlePolicy(http.MethodGet, "/api/nexus/builds/{uuid}/files/{filename}", rbac.AuthPolicy(), 0, hf(d.Nexus.Download))
 
 	// ---- 设置域（frontend 公开；general/smtp/ldap Admin；test 5/min）----
 	rt.HandlePolicy(http.MethodGet, "/api/settings/frontend", rbac.PublicPolicy(), 0, stub("GET /api/settings/frontend"))

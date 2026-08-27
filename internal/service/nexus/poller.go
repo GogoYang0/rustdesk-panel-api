@@ -72,7 +72,7 @@ func (s *NexusService) pollBuild(ctx context.Context, b *entity.NexusBuild) {
 		return
 	case "completed":
 		files := s.downloadArtifacts(ctx, b.Uuid, tok.NexusToken, status.Files)
-		_ = s.updateBuildStatus(ctx, b.Uuid, entity.NexusStatusCompleted, status.Message, files)
+		_ = s.updateBuildStatus(ctx, b.Uuid, entity.NexusStatusDone, status.Message, files)
 	case "failed":
 		_ = s.updateBuildStatus(ctx, b.Uuid, entity.NexusStatusFailed, status.Message, nil)
 	default:

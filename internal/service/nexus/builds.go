@@ -64,6 +64,9 @@ func (s *NexusService) CreateBuild(ctx context.Context, userGuid string, dto api
 		Status:    entity.NexusStatusPending,
 		CreatedAt: time.Now(),
 	}
+	if appName := dto.Custom["app-name"]; appName != "" {
+		rec.AppName = &appName
+	}
 	if err := s.db.WithContext(ctx).Create(&rec).Error; err != nil {
 		return nil, err
 	}
@@ -87,9 +90,9 @@ func (s *NexusService) ListBuilds(ctx context.Context, userGuid string) ([]api.N
 }
 
 // findOwnedBuild 按 uuid + 归属查询构建；跨用户或无记录 → 404。
-func (s *NexusService) findOwnedBuild(ctx context.Context, userGuid, uuid string) (*entity.NexusBuild, error) {
+func (s *NexusService) findOwnedBuild(ctx context.Context, userGuid, buildUuid string) (*entity.NexusBuild, error) {
 	var rec entity.NexusBuild
-	err := s.db.WithContext(ctx).Where("uuid = ? AND userGuid = ?", uuid, userGuid).First(&rec).Error
+	err := s.db.WithContext(ctx).Where("uuid = ? AND userGuid = ?", buildUuid, userGuid).First(&rec).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, rbac.ErrNotFoundErr("Build task not found")
 	}
@@ -101,21 +104,21 @@ func (s *NexusService) findOwnedBuild(ctx context.Context, userGuid, uuid string
 
 // CancelBuild 取消构建（DELETE 特例 204）：仅 pending/building 可取消；
 // 终态或不存在（含跨用户）→ 404/409。
-func (s *NexusService) CancelBuild(ctx context.Context, userGuid, uuid string) error {
-	rec, err := s.findOwnedBuild(ctx, userGuid, uuid)
+func (s *NexusService) CancelBuild(ctx context.Context, userGuid, buildUuid string) error {
+	rec, err := s.findOwnedBuild(ctx, userGuid, buildUuid)
 	if err != nil {
 		return err
 	}
 	if !rec.IsPolling() {
 		return rbac.ErrConflictMsg("Build task cannot be cancelled in current status")
 	}
-	rec.Status = entity.NexusStatusCancelled
+	rec.Status = entity.NexusStatusCanceled
 	return s.db.WithContext(ctx).Save(&rec).Error
 }
 
 // ListFiles 返回构建产物清单（GET builds/{uuid}/files）：跨用户 → 404。
-func (s *NexusService) ListFiles(ctx context.Context, userGuid, uuid string) (api.BuildFiles, error) {
-	rec, err := s.findOwnedBuild(ctx, userGuid, uuid)
+func (s *NexusService) ListFiles(ctx context.Context, userGuid, buildUuid string) (api.BuildFiles, error) {
+	rec, err := s.findOwnedBuild(ctx, userGuid, buildUuid)
 	if err != nil {
 		return api.BuildFiles{}, err
 	}
@@ -124,8 +127,8 @@ func (s *NexusService) ListFiles(ctx context.Context, userGuid, uuid string) (ap
 
 // ResolveFile 安全解析构建产物绝对路径（safeJoin 防穿越）；穿越 → ErrInvalidPath。
 // 调用方须已通过 findOwnedBuild 归属校验。
-func (s *NexusService) ResolveFile(uuid, filename string) (string, error) {
-	return s.storage.SafeJoin(filepath.Join(uuid, filename))
+func (s *NexusService) ResolveFile(buildUuid, filename string) (string, error) {
+	return s.storage.SafeJoin(filepath.Join(buildUuid, filename))
 }
 
 // ReadFile 读取已解析的绝对产物路径字节。
@@ -134,25 +137,36 @@ func (s *NexusService) ReadFile(absPath string) ([]byte, error) {
 }
 
 // DownloadFile 下载构建产物：先校验归属（跨用户 → 404），再 safeJoin（穿越
-// → ErrInvalidPath）并读取字节。文件名白名单剥离由 handler 层负责。
-func (s *NexusService) DownloadFile(ctx context.Context, userGuid, uuid, filename string) ([]byte, error) {
-	if _, err := s.findOwnedBuild(ctx, userGuid, uuid); err != nil {
+// → ErrInvalidPath 映射 400）并读取字节。文件名白名单由 handler 层先行过滤。
+//
+// 产物缺失/非普通文件 → 404 Build artifact not found（不泄漏 500）。
+func (s *NexusService) DownloadFile(ctx context.Context, userGuid, buildUuid, filename string) ([]byte, error) {
+	if _, err := s.findOwnedBuild(ctx, userGuid, buildUuid); err != nil {
 		return nil, err
 	}
-	abs, err := s.ResolveFile(uuid, filename)
+	abs, err := s.ResolveFile(buildUuid, filename)
 	if err != nil {
 		return nil, err
 	}
-	return s.ReadFile(abs)
+	data, err := s.ReadFile(abs)
+	if errors.Is(err, ErrArtifactNotFound) {
+		return nil, rbac.ErrNotFoundErr("Build artifact not found")
+	}
+	return data, err
 }
 
 // toBuildView 实体 → 视图（created_at 零值省略）。
+//
+// 状态映射（共享知识 17 / openapi NexusBuildView.status enum）：库内沿用
+// 兼容基准字面量 'done' / 'canceled'，对外视图枚举为
+// 'completed' / 'cancelled'——映射集中于此单一出口，避免两套字面量
+// 在各调用点漂移。
 func toBuildView(b *entity.NexusBuild) *api.NexusBuildView {
 	v := &api.NexusBuildView{
 		Uuid:   b.Uuid,
 		Os:     b.Os,
 		Arch:   b.Arch,
-		Status: api.NexusBuildViewStatus(b.Status),
+		Status: toViewStatus(b.Status),
 	}
 	if b.Custom != "" {
 		c := b.Custom
@@ -167,6 +181,23 @@ func toBuildView(b *entity.NexusBuild) *api.NexusBuildView {
 		v.CreatedAt = &t
 	}
 	return v
+}
+
+// toViewStatus 库内状态字面量 → 对外视图枚举（唯一映射出口）。
+func toViewStatus(status string) api.NexusBuildViewStatus {
+	switch status {
+	case entity.NexusStatusDone:
+		return api.Completed
+	case entity.NexusStatusCanceled:
+		return api.Cancelled
+	case entity.NexusStatusBuilding:
+		return api.Building
+	case entity.NexusStatusFailed:
+		return api.Failed
+	default:
+		// pending 及任何未识别中间态一律回 pending（枚举收敛）。
+		return api.Pending
+	}
 }
 
 // toBuildFiles 解析 nexus_builds.files JSON → BuildFiles 视图。
@@ -198,13 +229,13 @@ func (s *NexusService) ListPolling(ctx context.Context) ([]entity.NexusBuild, er
 }
 
 // updateBuildStatus 落库构建终态 + 产物清单（poller 使用）。
-func (s *NexusService) updateBuildStatus(ctx context.Context, uuid, status, message string, files []fileItem) error {
+func (s *NexusService) updateBuildStatus(ctx context.Context, buildUuid, status, message string, files []fileItem) error {
 	filesJSON, err := json.Marshal(files)
 	if err != nil {
 		return err
 	}
 	return s.db.WithContext(ctx).Model(&entity.NexusBuild{}).
-		Where("uuid = ?", uuid).
+		Where("uuid = ?", buildUuid).
 		Updates(map[string]any{
 			"status":  status,
 			"message": message,

@@ -13,6 +13,7 @@ import (
 	dashboardsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/dashboard"
 	devicesvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/device"
 	devicegroupsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/devicegroup"
+	nexussvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/nexus"
 	rbacsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/rbac"
 	servermgmt "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/servermgmt"
 	strategysvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/strategy"
@@ -223,7 +224,7 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 
 	// nexus 域（M3 T06，事实⑤）：上游代理 + 产物落盘 DATA_DIR/nexus；
 	// 后台 poller 不在此处启动（主流程显式 Nexus.Start，便于 ctx 生命周期）。
-	nexusSvc := nexus.NewNexusService(deps.DB, deps.Config.NexusUpstream, deps.Config.DataDir)
+	nexusSvc := nexussvc.NewNexusService(deps.DB, deps.Config.NexusUpstream, deps.Config.DataDir)
 	nexusH := handler.NewNexusHandler(nexusSvc)
 
 	return &Domain{
@@ -247,6 +248,7 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 		Dashboard:    dashboardH,
 		AddressBook:  abH,
 		ServerMGMT:   mgmtH,
+		Nexus:        nexusH,
 		Auth:         authH,
 		Oidc:         oidcH,
 		User:         userH,
