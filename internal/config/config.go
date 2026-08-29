@@ -46,9 +46,20 @@ type Config struct {
 	// api.databk.top；仅测试覆写。NEXUS_UPSTREAM 为空时回落缺省。
 	NexusUpstream string `env:"NEXUS_UPSTREAM" envDefault:"https://api.databk.top"`
 
-	// WebAuthn Relying Party 配置。
+	// WebAuthn Relying Party 配置（M3 起降级为 fallback：库值
+	// general.webauthn* 优先，见 M1 批复 #7）。
 	WebAuthnRPID    string   `env:"WEBAUTHN_RP_ID" envDefault:"localhost"`
 	WebAuthnOrigins []string `env:"WEBAUTHN_ORIGINS" envSeparator:"," envDefault:"http://localhost:8080"`
+
+	// M3 OIDC env fallback（设计事实⑧/M1 批复 #7）：oidc_providers 表
+	// 无 enabled 记录时降级启用本组配置；OIDC_ISSUER 为空即视为未配置。
+	OidcIssuer       string `env:"OIDC_ISSUER" envDefault:""`
+	OidcClientID     string `env:"OIDC_CLIENT_ID" envDefault:""`
+	OidcClientSecret string `env:"OIDC_CLIENT_SECRET" envDefault:""`
+	OidcScope        string `env:"OIDC_SCOPE" envDefault:""`
+
+	// 面板版本号（update-check 遥测 current 值与构建信息）。
+	Version string `env:"APP_VERSION" envDefault:"0.3.0"`
 
 	// 默认管理员种子（批复事项 #5：databk 缺省 + env 覆盖）。
 	AdminUsername string `env:"ADMIN_USERNAME" envDefault:"databk"`

@@ -221,16 +221,6 @@ func (rt *Router) registerStatic(dataDir string) {
 	rt.mux.Handle(http.MethodGet+" /files/{path...}", static.FilesHandler(filepath.Join(dataDir, "nexus")))
 }
 
-// notImplemented M3-T01 契约骨架占位 handler：横切链（限流/JWT/RBAC
-// 决策）按注册档位完整生效，handler 体为 501；T03~T07 逐域替换为
-// 真实实现（占位路由存在的意义是让"契约↔路由表↔设计档位表"三方
-// 一致性在本里程碑内全程可校验）。
-func notImplemented(route string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		httpx.Fail(w, http.StatusNotImplemented, "Not implemented in M3 T01: "+route)
-	})
-}
-
 // registerDomainRoutes 注册认证域路由（§2.1 #1~#19）。
 // 公开白名单：login、login-options、passkey/auth/*、oidc/*（共享知识 9）；
 // 限流参数表：login 5、login-options 20、passkey/auth 10、oidc/auth 5、
@@ -374,19 +364,18 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 	rt.HandlePolicy(http.MethodGet, "/api/dashboard", rbac.SuperAdminPolicy(), 0, hf(d.Dashboard.Overview))
 	rt.HandlePolicy(http.MethodGet, "/api/dashboard/trends", rbac.SuperAdminPolicy(), 0, hf(d.Dashboard.Trends))
 
-	// ---- M3 契约骨架（T01）：剩余 37 条 501 占位（notImplemented），
-	// T06~T07 逐域替换（user 14 条 T03、审计 9 + 仪表盘 2 条 T04、
-	// 通讯录 32 条 T05 已接真实实现；M3 全量 96 operation）。
-	rt.registerM3Stubs(d)
+	// ---- M3 剩余域（T05~T07 全部接真实实现；本函数为 M3 域注册总入口，
+	// 无 501 占位遗留：user 14 条 T03、审计 9 + 仪表盘 2 条 T04、
+	// 通讯录 32 条 T05、servers 10 + nexus 9 条 T06、settings 9 +
+	// oidc-providers 8 + update-check 1 条 T07，另有 2 条静态路由由
+	// registerStatic 登记——M3 全量 96）。档位与限流参数严格对齐设计
+	// §1.3 策略总表——三方一致性测试以本注册声明为路由侧数据源。
+	rt.registerM3DomainRoutes(d)
 }
 
-// registerM3Stubs 注册 M3 剩余骨架端点（37 = 10 servers + 9 nexus +
-// 9 settings + 8 oidc + 1 update；user 14 条 T03、审计 9 + 仪表盘 2 条
-// T04、通讯录 32 条 T05 已接真实实现，另有 2 条静态路由由
-// registerStatic 登记——M3 全量 96）。档位与限流参数严格对齐设计
-// §1.3 策略总表——三方一致性测试以本注册声明为路由侧数据源。
-func (rt *Router) registerM3Stubs(d *Domain) {
-	stub := notImplemented
+// registerM3DomainRoutes 注册 M3 通讯录/服务器/nexus/设置/OIDC/更新检查
+// 六域端点（原 registerM3Stubs 骨架已全部替换为真实 handler）。
+func (rt *Router) registerM3DomainRoutes(d *Domain) {
 	ab := d.AddressBook
 
 	// ---- 通讯录域（M3 T05 实现；24 端点仅 Auth，8 端点按
@@ -448,26 +437,26 @@ func (rt *Router) registerM3Stubs(d *Domain) {
 	rt.HandlePolicy(http.MethodGet, "/api/nexus/builds/{uuid}/files/{filename}", rbac.AuthPolicy(), 0, hf(d.Nexus.Download))
 
 	// ---- 设置域（frontend 公开；general/smtp/ldap Admin；test 5/min）----
-	rt.HandlePolicy(http.MethodGet, "/api/settings/frontend", rbac.PublicPolicy(), 0, stub("GET /api/settings/frontend"))
-	rt.HandlePolicy(http.MethodGet, "/api/settings/general", rbac.AdminGuardPolicy(), 0, stub("GET /api/settings/general"))
-	rt.HandlePolicy(http.MethodPut, "/api/settings/general", rbac.AdminGuardPolicy(), 0, stub("PUT /api/settings/general"))
-	rt.HandlePolicy(http.MethodGet, "/api/settings/smtp", rbac.AdminGuardPolicy(), 0, stub("GET /api/settings/smtp"))
-	rt.HandlePolicy(http.MethodPut, "/api/settings/smtp", rbac.AdminGuardPolicy(), 0, stub("PUT /api/settings/smtp"))
-	rt.HandlePolicy(http.MethodPost, "/api/settings/smtp/test", rbac.AdminGuardPolicy(), 5, stub("POST /api/settings/smtp/test"))
-	rt.HandlePolicy(http.MethodGet, "/api/settings/ldap", rbac.AdminGuardPolicy(), 0, stub("GET /api/settings/ldap"))
-	rt.HandlePolicy(http.MethodPut, "/api/settings/ldap", rbac.AdminGuardPolicy(), 0, stub("PUT /api/settings/ldap"))
-	rt.HandlePolicy(http.MethodPost, "/api/settings/ldap/test", rbac.AdminGuardPolicy(), 5, stub("POST /api/settings/ldap/test"))
+	rt.HandlePolicy(http.MethodGet, "/api/settings/frontend", rbac.PublicPolicy(), 0, hf(d.Settings.Frontend))
+	rt.HandlePolicy(http.MethodGet, "/api/settings/general", rbac.AdminGuardPolicy(), 0, hf(d.Settings.GeneralGet))
+	rt.HandlePolicy(http.MethodPut, "/api/settings/general", rbac.AdminGuardPolicy(), 0, hf(d.Settings.GeneralPut))
+	rt.HandlePolicy(http.MethodGet, "/api/settings/smtp", rbac.AdminGuardPolicy(), 0, hf(d.Settings.SmtpGet))
+	rt.HandlePolicy(http.MethodPut, "/api/settings/smtp", rbac.AdminGuardPolicy(), 0, hf(d.Settings.SmtpPut))
+	rt.HandlePolicy(http.MethodPost, "/api/settings/smtp/test", rbac.AdminGuardPolicy(), 5, hf(d.Settings.SmtpTest))
+	rt.HandlePolicy(http.MethodGet, "/api/settings/ldap", rbac.AdminGuardPolicy(), 0, hf(d.Settings.LdapGet))
+	rt.HandlePolicy(http.MethodPut, "/api/settings/ldap", rbac.AdminGuardPolicy(), 0, hf(d.Settings.LdapPut))
+	rt.HandlePolicy(http.MethodPost, "/api/settings/ldap/test", rbac.AdminGuardPolicy(), 5, hf(d.Settings.LdapTest))
 
 	// ---- OIDC 提供者域（全 Admin）----
-	rt.HandlePolicy(http.MethodGet, "/api/oidc-providers", rbac.AdminGuardPolicy(), 0, stub("GET /api/oidc-providers"))
-	rt.HandlePolicy(http.MethodPost, "/api/oidc-providers", rbac.AdminGuardPolicy(), 0, stub("POST /api/oidc-providers"))
-	rt.HandlePolicy(http.MethodPatch, "/api/oidc-providers/sort", rbac.AdminGuardPolicy(), 0, stub("PATCH /api/oidc-providers/sort"))
-	rt.HandlePolicy(http.MethodGet, "/api/oidc-providers/{guid}", rbac.AdminGuardPolicy(), 0, stub("GET /api/oidc-providers/{guid}"))
-	rt.HandlePolicy(http.MethodPatch, "/api/oidc-providers/{guid}", rbac.AdminGuardPolicy(), 0, stub("PATCH /api/oidc-providers/{guid}"))
-	rt.HandlePolicy(http.MethodDelete, "/api/oidc-providers/{guid}", rbac.AdminGuardPolicy(), 0, stub("DELETE /api/oidc-providers/{guid}"))
-	rt.HandlePolicy(http.MethodPatch, "/api/oidc-providers/{guid}/toggle", rbac.AdminGuardPolicy(), 0, stub("PATCH /api/oidc-providers/{guid}/toggle"))
-	rt.HandlePolicy(http.MethodPost, "/api/oidc-providers/{guid}/test", rbac.AdminGuardPolicy(), 0, stub("POST /api/oidc-providers/{guid}/test"))
+	rt.HandlePolicy(http.MethodGet, "/api/oidc-providers", rbac.AdminGuardPolicy(), 0, hf(d.OidcAdmin.List))
+	rt.HandlePolicy(http.MethodPost, "/api/oidc-providers", rbac.AdminGuardPolicy(), 0, hf(d.OidcAdmin.Create))
+	rt.HandlePolicy(http.MethodPatch, "/api/oidc-providers/sort", rbac.AdminGuardPolicy(), 0, hf(d.OidcAdmin.Sort))
+	rt.HandlePolicy(http.MethodGet, "/api/oidc-providers/{guid}", rbac.AdminGuardPolicy(), 0, hf(d.OidcAdmin.GetOne))
+	rt.HandlePolicy(http.MethodPatch, "/api/oidc-providers/{guid}", rbac.AdminGuardPolicy(), 0, hf(d.OidcAdmin.Update))
+	rt.HandlePolicy(http.MethodDelete, "/api/oidc-providers/{guid}", rbac.AdminGuardPolicy(), 0, hf(d.OidcAdmin.Delete))
+	rt.HandlePolicy(http.MethodPatch, "/api/oidc-providers/{guid}/toggle", rbac.AdminGuardPolicy(), 0, hf(d.OidcAdmin.Toggle))
+	rt.HandlePolicy(http.MethodPost, "/api/oidc-providers/{guid}/test", rbac.AdminGuardPolicy(), 0, hf(d.OidcAdmin.Test))
 
 	// ---- 更新检查（Admin）----
-	rt.HandlePolicy(http.MethodGet, "/api/update-check", rbac.AdminGuardPolicy(), 0, stub("GET /api/update-check"))
+	rt.HandlePolicy(http.MethodGet, "/api/update-check", rbac.AdminGuardPolicy(), 0, hf(d.UpdateCheck.Get))
 }
