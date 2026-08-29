@@ -30,10 +30,17 @@ type Claims struct {
 
 // TokenService JWT 签发/校验/撤销：HS256 + user_tokens 有状态撤销
 // （共享知识 4：每个受保护请求查库校验 userGuid+jti+isRevoked=false 且未过期）。
+//
+// M3 T07（M1 批复 #7）：expiry 由 system_settings 的 general.jwtExpiryDays
+// 驱动（库值合法时生效），env JWT_EXPIRY_DAYS 降级为 fallback。
 type TokenService struct {
 	tokens *repository.UserTokenRepo
 	secret []byte
 	expiry time.Duration
+	// defaultExpiryDays env 缺省天数（库值缺失/非法时回退）。
+	defaultExpiryDays int
+	// settings settings 驱动读取口（可为 nil，nil 时纯 env 行为）。
+	settings RuntimeSettings
 	// now 可注入虚拟时钟（测试用）；默认 time.Now。
 	now func() time.Time
 }
@@ -44,10 +51,11 @@ func NewTokenService(tokens *repository.UserTokenRepo, secret string, expiryDays
 		expiryDays = 30
 	}
 	return &TokenService{
-		tokens: tokens,
-		secret: []byte(secret),
-		expiry: time.Duration(expiryDays) * 24 * time.Hour,
-		now:    time.Now,
+		tokens:            tokens,
+		secret:            []byte(secret),
+		expiry:            time.Duration(expiryDays) * 24 * time.Hour,
+		defaultExpiryDays: expiryDays,
+		now:               time.Now,
 	}
 }
 
@@ -58,7 +66,8 @@ func NewTokenService(tokens *repository.UserTokenRepo, secret string, expiryDays
 func (s *TokenService) Generate(ctx context.Context, user *entity.User, dev dto.LoginDevice) (string, error) {
 	jti := uuid.New().String()
 	now := s.now()
-	expiresAt := now.Add(s.expiry)
+	// settings 驱动：库值（general.jwtExpiryDays）合法时覆盖 env 缺省。
+	expiresAt := now.Add(s.applyExpiry(ctx))
 	record := &entity.UserToken{
 		Guid:       jti,
 		UserGuid:   user.Guid,

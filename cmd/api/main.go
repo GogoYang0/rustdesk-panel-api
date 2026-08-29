@@ -94,6 +94,16 @@ func runServe(cfg config.Config, logger *slog.Logger) {
 	stopCleanup := authsvc.StartCleanup(ctx, router.Domain().Cleanup, logger)
 	defer stopCleanup()
 
+	// M3 T07：nexus 构建轮询（10s）+ update-check 每小时检查
+	// 均为进程内单例（多副本会重复执行，幂等无害；README 已注明）。
+	router.Domain().NexusPoller.Start(ctx)
+	scheduler := router.Domain().UpdateCheckScheduler
+	if err := scheduler.Start(); err != nil {
+		logger.Error("update-check scheduler start failed", "err", err)
+		os.Exit(1)
+	}
+	defer scheduler.Stop()
+
 	srv := server.NewHTTPServer(cfg, router.Handler(), logger)
 	if err := srv.Run(ctx); err != nil {
 		logger.Error("server exited", "err", err)

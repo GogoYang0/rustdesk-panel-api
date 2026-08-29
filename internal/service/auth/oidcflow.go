@@ -34,11 +34,16 @@ const oidcSubjectPrefix = "oidc:"
 const defaultScope = "openid profile email"
 
 // OidcFlowService OIDC 授权流：login-options、发起授权、轮询、回调。
+//
+// M3 T07（M1 批复 #7）：提供商来源切 oidc_providers 表（enabled 数据驱动 +
+// priority 排序），env OIDC_* 降级为 fallback（表中无 enabled 记录时启用）。
 type OidcFlowService struct {
 	providers *repository.OidcRepo
 	users     *repository.UserRepo
 	groups    *repository.UserGroupRepo
 	tokens    *TokenService
+	// fallback env OIDC 配置（表中无 enabled 记录时的降级形态）。
+	fallback *EnvOidcFallback
 }
 
 // NewOidcFlowService 构建服务。
@@ -47,13 +52,67 @@ func NewOidcFlowService(providers *repository.OidcRepo, users *repository.UserRe
 	return &OidcFlowService{providers: providers, users: users, groups: groups, tokens: tokens}
 }
 
+// WithEnvFallback 注入 env OIDC fallback（bootstrap 装配；nil 时无降级）。
+func (s *OidcFlowService) WithEnvFallback(fallback *EnvOidcFallback) *OidcFlowService {
+	s.fallback = fallback
+	return s
+}
+
+// fallbackProvider 构造 env fallback 的临时 provider 视图
+// （表内无 enabled 记录时启用；每次构造避免污染仓储）。
+func (s *OidcFlowService) fallbackProvider() *entity.OidcProvider {
+	if s.fallback == nil || !s.fallback.Enabled || s.fallback.Issuer == "" {
+		return nil
+	}
+	name := s.fallback.Name
+	if name == "" {
+		name = "oidc"
+	}
+	return &entity.OidcProvider{
+		Guid:         "env-fallback",
+		Name:         name,
+		Type:         "oidc",
+		Issuer:       s.fallback.Issuer,
+		ClientId:     s.fallback.ClientID,
+		ClientSecret: s.fallback.ClientSecret,
+		Scope:        normalizeScope(s.fallback.Scope),
+		Enabled:      true,
+		Priority:     0,
+	}
+}
+
+// resolveProvider 按名解析生效 provider：表内记录优先，缺失时回退 env。
+func (s *OidcFlowService) resolveProvider(ctx context.Context, name string) (*entity.OidcProvider, error) {
+	p, err := s.providers.FindByName(ctx, name)
+	if err == nil && p.Enabled {
+		return p, nil
+	}
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		return nil, err
+	}
+	if fb := s.fallbackProvider(); fb != nil && fb.Name == name {
+		return fb, nil
+	}
+	return nil, repository.ErrNotFound
+}
+
 // LoginOptions 登录方式选项（§2.1 #2）：启用中的提供商按 priority 升序。
+//
+// M3 T07 数据驱动：优先取 oidc_providers 表 enabled 记录；表中无 enabled
+// 记录且 env 已配置时，降级返回 env fallback 单项（M1 行为回归）。
 func (s *OidcFlowService) LoginOptions(ctx context.Context) (dto.LoginOptionsResult, error) {
 	providers, err := s.providers.FindEnabledProviders(ctx)
 	if err != nil {
 		return dto.LoginOptionsResult{}, err
 	}
 	res := dto.LoginOptionsResult{Names: []string{}, Items: []dto.ProviderOption{}}
+	if len(providers) == 0 {
+		if fb := s.fallbackProvider(); fb != nil {
+			res.Names = append(res.Names, "oidc/"+fb.Name)
+			res.Items = append(res.Items, dto.ProviderOption{Name: fb.Name})
+		}
+		return res, nil
+	}
 	for _, p := range providers {
 		if p.Icon != "" {
 			res.HasIcons = true
@@ -68,7 +127,7 @@ func (s *OidcFlowService) LoginOptions(ctx context.Context) (dto.LoginOptionsRes
 // （PKCE codeVerifier + nonce + state，短 TTL），返回授权 URL。
 // callbackURI 为本服务对外回调地址（handler 依请求推导）。
 func (s *OidcFlowService) RequestAuth(ctx context.Context, req *api.OidcAuthRequest, callbackURI string) (dto.AuthURLResult, error) {
-	p, err := s.providers.FindByName(ctx, req.Provider)
+	p, err := s.resolveProvider(ctx, req.Provider)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return dto.AuthURLResult{}, NotFound("Provider not found")
@@ -171,7 +230,7 @@ func (s *OidcFlowService) HandleCallback(ctx context.Context, q dto.CallbackQuer
 	if time.Now().After(state.ExpiresAt) {
 		return renderError("State expired", "Authorization state is invalid or expired")
 	}
-	p, err := s.providers.FindByName(ctx, state.Op)
+	p, err := s.resolveProvider(ctx, state.Op)
 	if err != nil {
 		return dto.CallbackResult{}, err
 	}

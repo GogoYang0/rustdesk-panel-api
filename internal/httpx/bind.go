@@ -45,6 +45,19 @@ func DecodeJSON[T any](w http.ResponseWriter, r *http.Request) (*T, bool) {
 	return &body, true
 }
 
+// DecodeJSONOptional 可选 JSON 请求体绑定（M3 T07 扩展点）：
+//   - 空体 / Content-Length 0 → 返回 (nil, true)，不写任何响应；
+//   - 非空体走 DecodeJSON 的严格语义（未知字段拒绝 + validator）。
+//
+// 供 settings smtp/ldap test 端点使用（openapi requestBody required: false，
+// 缺省用已存配置）。失败时已写出 400 并返回 (nil, false)。
+func DecodeJSONOptional[T any](w http.ResponseWriter, r *http.Request) (*T, bool) {
+	if r.Body == nil || r.ContentLength == 0 {
+		return nil, true
+	}
+	return DecodeJSON[T](w, r)
+}
+
 // maxMultipartMemory 与 NestJS memory storage 行为对齐的内存缓冲上限。
 const maxMultipartMemory = 32 << 20 // 32 MiB
 

@@ -66,8 +66,11 @@ func NewLdapService(store *Store) *LdapService {
 }
 
 // Get 读取配置：bindCredentials 恒掩码；库值缺失逐键回退缺省。
+//
+// 数组字段恒回空数组（非 null）：openapi LdapConfig 的 items 为
+// 非 nullable array，null 会违反响应契约。
 func (s *LdapService) Get(ctx context.Context) (dto.LdapConfigDto, error) {
-	urls, err := s.store.GetStringList(ctx, KeyLdapURLs, nil)
+	urls, err := s.store.GetStringList(ctx, KeyLdapURLs, []string{})
 	if err != nil {
 		return dto.LdapConfigDto{}, err
 	}
@@ -83,7 +86,7 @@ func (s *LdapService) Get(ctx context.Context) (dto.LdapConfigDto, error) {
 	if err != nil {
 		return dto.LdapConfigDto{}, err
 	}
-	searchAttributes, err := s.store.GetStringList(ctx, KeyLdapSearchAttributes, nil)
+	searchAttributes, err := s.store.GetStringList(ctx, KeyLdapSearchAttributes, []string{})
 	if err != nil {
 		return dto.LdapConfigDto{}, err
 	}
@@ -95,7 +98,7 @@ func (s *LdapService) Get(ctx context.Context) (dto.LdapConfigDto, error) {
 	if err != nil {
 		return dto.LdapConfigDto{}, err
 	}
-	adminGroups, err := s.store.GetStringList(ctx, KeyLdapAdminGroups, nil)
+	adminGroups, err := s.store.GetStringList(ctx, KeyLdapAdminGroups, []string{})
 	if err != nil {
 		return dto.LdapConfigDto{}, err
 	}

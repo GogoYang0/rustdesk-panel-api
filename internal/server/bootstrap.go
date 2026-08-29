@@ -14,9 +14,12 @@ import (
 	devicesvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/device"
 	devicegroupsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/devicegroup"
 	nexussvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/nexus"
+	oidcadmin "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/oidcadmin"
 	rbacsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/rbac"
 	servermgmt "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/servermgmt"
+	settingssvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/settings"
 	strategysvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/strategy"
+	updatechecksvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/updatecheck"
 	usersvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/user"
 	usergroupsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/usergroup"
 )
@@ -69,6 +72,22 @@ type Domain struct {
 	// nexus 域（M3 T06，事实⑤）：GitHub 设备码绑定 + 定制构建生命周期
 	// + 产物 safeJoin 下载；后台 10s poller 由 main 启动（Nexus.Start）。
 	Nexus *handler.NexusHandler
+
+	// 设置域（M3 T07，事实④）：frontend 公开 + general/smtp/ldap 读写
+	// 与连通性测试（test 恒 200）。
+	Settings *handler.SettingsHandler
+
+	// OIDC 提供者管理域（M3 T07，事实⑧）：CRUD/sort/toggle/test。
+	OidcAdmin *handler.OidcAdminHandler
+
+	// 更新检查域（M3 T07，事实④）：GET /api/update-check（AdminGuard）。
+	UpdateCheck *handler.UpdateCheckHandler
+
+	// UpdateCheckScheduler 后台每小时调度器（main 显式启动）。
+	UpdateCheckScheduler *updatechecksvc.Scheduler
+
+	// NexusPoller nexus 构建轮询服务（main 显式 Start 启动后台 10s 轮询）。
+	NexusPoller *nexussvc.NexusService
 
 	Auth *handler.AuthHandler
 	Oidc *handler.OidcHandler
@@ -227,6 +246,46 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	nexusSvc := nexussvc.NewNexusService(deps.DB, deps.Config.NexusUpstream, deps.Config.DataDir)
 	nexusH := handler.NewNexusHandler(nexusSvc)
 
+	// 设置域（M3 T07，事实④）：system_settings KV 服务 + general/smtp/	// ldap/frontend 四子服务；掩码约定与 404 固定文案由服务层承担。
+	settingRepo := repository.NewSystemSettingRepo(deps.DB)
+	settingStore := settingssvc.NewStore(settingRepo)
+	settingGeneral := settingssvc.NewGeneralService(settingStore)
+	settingSmtp := settingssvc.NewSmtpService(settingStore)
+	settingLdap := settingssvc.NewLdapService(settingStore)
+	settingFrontend := settingssvc.NewFrontendService(settingGeneral)
+	settingsH := handler.NewSettingsHandler(settingGeneral, settingSmtp, settingLdap, settingFrontend)
+
+	// OIDC 提供者管理域（M3 T07，事实⑧）：CRUD/sort/toggle/test；
+	// discovery 缓存进程内单例（issuer 变更时失效）。
+	oidcAdminRepo := repository.NewOidcProviderAdminRepo(deps.DB)
+	oidcAdminSvc := oidcadmin.NewProviderService(oidcAdminRepo)
+	oidcAdminH := handler.NewOidcAdminHandler(oidcAdminSvc)
+
+	// update-check 域（M3 T07，事实④）：每小时 cron 拉取
+	// {NEXUS_UPSTREAM}/v1/update/check；install_id 落 system_settings。
+	updateCheckSvc := updatechecksvc.NewService(updatechecksvc.Options{
+		Upstream: deps.Config.NexusUpstream,
+		Version:  deps.Config.Version,
+		Channel:  deps.Config.UpdateChannel,
+		Settings: settingRepo,
+		Counters: repository.NewUpdateCheckCounters(deps.DB),
+	})
+	updateCheckH := handler.NewUpdateCheckHandler(updateCheckSvc)
+	// 调度器仅构造，不启动（main 显式 Start/Stop，便于优雅退出）。
+	updateCheckScheduler := updatechecksvc.NewScheduler(updateCheckSvc, deps.Logger)
+
+	// M1 批复 #7 settings 驱动切换：JWT 过期天数与 OIDC 提供者
+	// 改为"查库 → env fallback"两级读取（env 缺省保留为降级形态）。
+	tokenSvc.WithRuntimeSettings(settingGeneral, deps.Config.JWTExpiryDays)
+	oidcSvc.WithEnvFallback(&authsvc.EnvOidcFallback{
+		Enabled:      deps.Config.OidcIssuer != "",
+		Name:         "oidc",
+		Issuer:       deps.Config.OidcIssuer,
+		ClientID:     deps.Config.OidcClientID,
+		ClientSecret: deps.Config.OidcClientSecret,
+		Scope:        deps.Config.OidcScope,
+	})
+
 	return &Domain{
 		Tokens:       tokenSvc,
 		Login:        loginSvc,
@@ -249,8 +308,14 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 		AddressBook:  abH,
 		ServerMGMT:   mgmtH,
 		Nexus:        nexusH,
-		Auth:         authH,
-		Oidc:         oidcH,
-		User:         userH,
+		Settings:     settingsH,
+		OidcAdmin:    oidcAdminH,
+		UpdateCheck:  updateCheckH,
+
+		UpdateCheckScheduler: updateCheckScheduler,
+		NexusPoller:          nexusSvc,
+		Auth:                 authH,
+		Oidc:                 oidcH,
+		User:                 userH,
 	}, nil
 }
