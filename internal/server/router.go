@@ -301,6 +301,7 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 	// 分码；candidates/target-candidates/assignments/assign/unassign 均
 	// Perm(strategies.assign)（scope 决策查库，资源复核在服务层）。
 	rt.HandlePolicy(http.MethodGet, "/api/strategies", rbac.PermPolicy(rbac.CodeStrategiesView), 0, hf(d.Strategy.List))
+	rt.HandlePolicy(http.MethodGet, "/api/strategies/presets", rbac.PermPolicy(rbac.CodeStrategiesView), 0, hf(d.Strategy.Presets))
 	rt.HandlePolicy(http.MethodPost, "/api/strategies", rbac.PermPolicy(rbac.CodeStrategiesCreate), 0, hf(d.Strategy.Create))
 	rt.HandlePolicy(http.MethodGet, "/api/strategies/candidates", rbac.PermPolicy(rbac.CodeStrategiesAssign), 0, hf(d.Strategy.Candidates))
 	rt.HandlePolicy(http.MethodGet, "/api/strategies/target-candidates", rbac.PermPolicy(rbac.CodeStrategiesAssign), 0, hf(d.Strategy.TargetCandidates))

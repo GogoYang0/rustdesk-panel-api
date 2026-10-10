@@ -837,8 +837,8 @@ func TestM3SecurityRouteSurfaceCount(t *testing.T) {
 		}
 	}
 
-	if total != 172 {
-		t.Errorf("受保护+公开路由总数 = %d, want 172（设计 §1.3 策略总表 + GAP2 §2.3/§3）", total)
+	if total != 173 {
+		t.Errorf("受保护+公开路由总数 = %d, want 173（设计 §1.3 策略总表 + GAP2 §2.3/§3 + v0.2.1 presets）", total)
 	}
 	if counts[policyPublic] == 0 || counts[policyPerm] == 0 || counts[policyAdminGuard] == 0 {
 		t.Errorf("档位分布异常（应各档非零）: %v", counts)

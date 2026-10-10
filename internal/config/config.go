@@ -46,6 +46,9 @@ type Config struct {
 	// api.databk.top；仅测试覆写。NEXUS_UPSTREAM 为空时回落缺省。
 	NexusUpstream string `env:"NEXUS_UPSTREAM" envDefault:"https://api.databk.top"`
 
+	// v0.2.1 更新检查版本源：GitHub API 基址（仅测试覆写）。
+	GitHubAPIBase string `env:"GITHUB_API_BASE" envDefault:"https://api.github.com"`
+
 	// WebAuthn Relying Party 配置（M3 起降级为 fallback：库值
 	// general.webauthn* 优先，见 M1 批复 #7）。
 	WebAuthnRPID    string   `env:"WEBAUTHN_RP_ID" envDefault:"localhost"`
