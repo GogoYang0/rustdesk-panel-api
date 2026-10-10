@@ -4,6 +4,12 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 简化版。
 
+## v0.1.1（2026-10-10）
+
+### 修复
+
+- **[fix] 官方客户端登录 type 兼容**：成功登录响应 `type` 由自造值 `account` 改为 `access_token`，对齐官方 RustDesk 客户端（flutter `user_model.dart`）的登录完成判定条件，修复客户端报 "Failed, bad response from server"；`account` 作为弃用的历史兼容值保留在契约枚举中；登录 / 两步验证通过后 / passkey 登录三处成功收口同步更新，契约与测试断言已同步。
+
 ## v0.1.0（2026-10-11）
 
 首个发布版本。RustDesk 管理平台后端（Go 1.27），以 databk/rustdesk-console 的端点接口与数据库契约为兼容基准重构，不迁移任何实现代码。
