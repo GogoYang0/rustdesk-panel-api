@@ -63,6 +63,8 @@ jobs:
 
   docker:
     needs: prepare
+    # 仓库重建后旧 GHCR 包权限未关联新仓库，待包权限修复后移除 continue-on-error
+    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       contents: read
