@@ -2,6 +2,17 @@
 
 RustDesk 管理平台后端（Go 1.27）。以 [databk/rustdesk-console](https://github.com/databk/rustdesk-console) 的**端点接口与数据库契约**为兼容基准重构，不迁移任何实现代码。
 
+## 稳定性提醒
+
+> ⚠️ 本项目主版本号目前为 **0**（v0.x），不保证稳定性。如遇 bug 或其他影响使用的问题，欢迎提出 issue。
+
+## 构建与运行
+
+```sh
+go build ./...   # 编译全部包
+go test ./...    # 运行全部测试（含契约用例）
+```
+
 ## 当前状态
 
 - **M0 基建**（已完成）：健康检查端点、跨平台静态编译 CI（nightly / pre-release / release）、Docker 开发栈。
