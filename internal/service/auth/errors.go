@@ -47,6 +47,11 @@ func NotFound(text string) *ServiceError {
 	return &ServiceError{Status: 404, Message: text}
 }
 
+// Forbidden 403 拒绝（message 为纯文本形态）。
+func Forbidden(text string) *ServiceError {
+	return &ServiceError{Status: 403, Message: text}
+}
+
 // Conflict 409 冲突（message 为对象形态）。
 func Conflict(text string) *ServiceError {
 	return &ServiceError{Status: 409, Message: map[string]string{"error": text}}

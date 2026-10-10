@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/entity"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/repository"
@@ -337,7 +338,8 @@ func TestContractDeviceDelete(t *testing.T) {
 }
 
 // TestContractDeviceDisconnect 断连：scope 内放行、越 scope 403
-// （device 路线文案）、未知设备 404、空 connIds 400、无权限码 403。
+// （device 路线文案）、未知设备 404、空 connIds = 断开全部活跃连接
+// （v0.2.1：非数值审计 conn_id 跳过）、无权限码 403。
 func TestContractDeviceDisconnect(t *testing.T) {
 	cs, as, seed := newDeviceContractServer(t)
 	scoped := bearer(m2Token(t, as, seed.Scoped)) // devices.disconnect @ DG1
@@ -349,6 +351,36 @@ func TestContractDeviceDisconnect(t *testing.T) {
 		t.Errorf("pending = %v, want 2", m["pending_disconnect_count"])
 	}
 
+	// 播一条活跃审计行（数值 conn_id=42）与非数值行（应跳过）。
+	uid := seed.PeerA.UUID
+	ptr := func(s string) *string { return &s }
+	if err := as.DB.Create(&entity.ConnectionAudit{
+		DeviceId: seed.PeerA.ID, DeviceUuid: &uid, ConnId: ptr("42"),
+		Action: entity.ConnActionEstablished, RequestedAt: time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("seed active conn: %v", err)
+	}
+	if err := as.DB.Create(&entity.ConnectionAudit{
+		DeviceId: seed.PeerA.ID, DeviceUuid: &uid, ConnId: ptr("seed-nx"),
+		Action: entity.ConnActionEstablished, RequestedAt: time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("seed non-numeric conn: %v", err)
+	}
+
+	// 空 connIds → 200：断开全部活跃连接（仅数值 42 入队 → pending=3）。
+	raw = cs.post(t, "/api/devices/"+seed.PeerA.UUID+"/disconnect",
+		map[string]any{"connIds": []int{}}, scoped, 200)
+	if m := decodeMap(t, raw); m["pending_disconnect_count"].(float64) != 3 {
+		t.Errorf("empty connIds pending = %v, want 3", m["pending_disconnect_count"])
+	}
+
+	// 缺省（body 无 connIds 键）→ 200 同语义（幂等，仍 3）。
+	raw = cs.post(t, "/api/devices/"+seed.PeerA.UUID+"/disconnect",
+		map[string]any{}, scoped, 200)
+	if m := decodeMap(t, raw); m["pending_disconnect_count"].(float64) != 3 {
+		t.Errorf("default body pending = %v, want 3", m["pending_disconnect_count"])
+	}
+
 	// 越 scope（PeerC ∈ DG2）。
 	raw = cs.post(t, "/api/devices/"+seed.PeerC.UUID+"/disconnect",
 		map[string]any{"connIds": []int{1}}, scoped, 403)
@@ -357,10 +389,6 @@ func TestContractDeviceDisconnect(t *testing.T) {
 	// 未知设备 404。
 	cs.post(t, "/api/devices/uuid-ghost/disconnect",
 		map[string]any{"connIds": []int{1}}, scoped, 404)
-
-	// 空 connIds → 400。
-	cs.invalid(t, http.MethodPost, "/api/devices/"+seed.PeerA.UUID+"/disconnect",
-		map[string]any{"connIds": []int{}}, scoped, 400)
 
 	// 只有 devices.view 的用户：路由级 403 Access denied。
 	global := bearer(m2Token(t, as, seed.Global))

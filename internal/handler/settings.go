@@ -6,8 +6,10 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
+	"github.com/rustdesk-panel/rustdesk-panel-api/internal/api"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/dto"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/httpx"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/rbac"
@@ -172,7 +174,8 @@ func (h *SettingsHandler) MfaGet(w http.ResponseWriter, r *http.Request) {
 }
 
 // MfaPut PUT /api/settings/mfa（AdminGuard；GAP2 G4）：enforceGlobal
-// 必填，userGroupGuids 可选（nil 不更新）。
+// 必填，userGroupGuids 可选（nil 不更新）。v0.2.1：开启强制前存在
+// 未绑定 2FA 用户 → 400 + MfaEnforcementConflict 名单。
 func (h *SettingsHandler) MfaPut(w http.ResponseWriter, r *http.Request) {
 	req, ok := httpx.DecodeJSON[dto.UpdateMfaSettings](w, r)
 	if !ok {
@@ -180,6 +183,35 @@ func (h *SettingsHandler) MfaPut(w http.ResponseWriter, r *http.Request) {
 	}
 	view, err := h.mfa.Update(r.Context(), *req)
 	if err != nil {
+		var conflict *settingssvc.EnforcementConflictError
+		if errors.As(err, &conflict) {
+			users := make([]struct {
+				DisplayName string `json:"display_name"`
+				Guid        string `json:"guid"`
+				UserGroupName string `json:"user_group_name"`
+				Username      string `json:"username"`
+			}, 0, len(conflict.Users))
+			for _, u := range conflict.Users {
+				users = append(users, struct {
+					DisplayName string `json:"display_name"`
+					Guid        string `json:"guid"`
+					UserGroupName string `json:"user_group_name"`
+					Username      string `json:"username"`
+				}{
+					Guid:          u.Guid,
+					Username:      u.Username,
+					DisplayName:   u.DisplayName,
+					UserGroupName: u.UserGroupName,
+				})
+			}
+			httpx.WriteJSON(w, http.StatusBadRequest, api.MfaEnforcementConflict{
+				StatusCode: api.N400,
+				Error:      api.MfaEnforcementConflictErrorBadRequest,
+				Message:    conflict.Error(),
+				Users:      users,
+			})
+			return
+		}
 		writeSettingsError(w, err)
 		return
 	}

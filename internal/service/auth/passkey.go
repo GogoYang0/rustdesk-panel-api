@@ -394,6 +394,24 @@ func (s *PasskeyService) Delete(ctx context.Context, userGuid, guid string) erro
 	if record.UserGuid != userGuid {
 		return NotFound("Passkey not found")
 	}
+	// v0.2.1 强制 MFA 守卫：被强制用户（全局/组级命中）禁止删除
+	// passkey 凭据（解绑）；从强制范围移除后方可删除。
+	if s.mfa != nil {
+		user, uerr := s.users.FindByGuid(ctx, userGuid)
+		if uerr != nil {
+			if errors.Is(uerr, repository.ErrNotFound) {
+				return NotFound("User not found")
+			}
+			return uerr
+		}
+		hit, perr := s.mfa.policy.Enforced(ctx, derefStr(user.UserGroupGuid))
+		if perr != nil {
+			return perr
+		}
+		if hit {
+			return Forbidden(msgTfaUnbindBlocked)
+		}
+	}
 	return s.creds.Delete(ctx, repository.Clause{Field: "guid", Op: repository.OpEq, Value: guid})
 }
 
