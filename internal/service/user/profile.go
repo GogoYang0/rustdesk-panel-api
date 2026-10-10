@@ -17,12 +17,15 @@ import (
 
 // ProfileService 当前用户资料：PATCH users/me 与改密。
 type ProfileService struct {
-	users *repository.UserRepo
+	users    *repository.UserRepo
+	tokens   *repository.UserTokenRepo
+	sessions *repository.LoginSessionRepo
 }
 
-// NewProfileService 构建服务。
-func NewProfileService(users *repository.UserRepo) *ProfileService {
-	return &ProfileService{users: users}
+// NewProfileService 构建服务。tokens/sessions 用于改密成功后
+// 撤销该用户全部会话（强制重新登录）。
+func NewProfileService(users *repository.UserRepo, tokens *repository.UserTokenRepo, sessions *repository.LoginSessionRepo) *ProfileService {
+	return &ProfileService{users: users, tokens: tokens, sessions: sessions}
 }
 
 // UpdateMe 更新 display_name / email / note（nil 字段不更新）。
@@ -70,6 +73,8 @@ func (s *ProfileService) UpdateMe(ctx context.Context, guid string, req dto.Upda
 }
 
 // ChangePassword 修改密码：bcrypt 复核旧密码；新密码至少 6 位。
+// 修改成功后撤销该用户全部有效会话（user_tokens 全量置 isRevoked +
+// 清理未使用的两步登录中间态），强制所有端重新登录。
 func (s *ProfileService) ChangePassword(ctx context.Context, guid string, req dto.ChangePasswordRequest) (api.MessageResponse, error) {
 	if req.CurrentPassword == "" || req.NewPassword == "" {
 		return api.MessageResponse{}, authsvc.BadRequest("Current and new password are required")
@@ -95,6 +100,13 @@ func (s *ProfileService) ChangePassword(ctx context.Context, guid string, req dt
 		"password":  string(hash),
 		"updatedAt": time.Now(),
 	}); err != nil {
+		return api.MessageResponse{}, err
+	}
+	// 会话撤销：改密后旧 token 一律失效（含当前请求方），客户端须重新登录。
+	if err := s.tokens.RevokeAllActive(ctx, guid, time.Now()); err != nil {
+		return api.MessageResponse{}, err
+	}
+	if err := s.sessions.DeleteUnused(ctx, guid); err != nil {
 		return api.MessageResponse{}, err
 	}
 	return api.MessageResponse{Message: "Password changed"}, nil

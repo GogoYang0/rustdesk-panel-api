@@ -130,6 +130,13 @@ func TestChangePasswordFlow(t *testing.T) {
 		t.Fatalf("change password = %d %s", status, raw)
 	}
 
+	// ★ 改密成功后旧 token 全部失效（user_tokens 撤销 → 401 强制重新登录）。
+	status, _, _ = doJSON(t, ts.TS.Client(), http.MethodPost, ts.TS.URL+"/api/currentUser",
+		map[string]any{}, authHeader(token))
+	if status != 401 {
+		t.Errorf("old token after password change status = %d, want 401", status)
+	}
+
 	// 旧密码登录失败；新密码登录成功。
 	status, _, _ = doJSON(t, ts.TS.Client(), http.MethodPost, ts.TS.URL+"/api/login",
 		map[string]any{"username": "databk", "password": "databk"}, nil)
