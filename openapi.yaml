@@ -5105,14 +5105,18 @@ components:
 
     LoginResponse:
       type: object
-      description: 分支结构：account 带 access_token+user；
+      description: 分支结构：成功登录返回 type=access_token（兼容官方 RustDesk 客户端，
+        客户端以 type==access_token 且 access_token 非空作为登录完成条件），
+        并带 access_token+user；
         两步验证带 type=email_check + tfa_type + secret；
         passkey_tfa 第一步复用 email_check 类型位并附 passkey_options。
       required: [type]
       properties:
         type:
           type: string
-          enum: [account, email_check]
+          # account 为弃用的历史值（v0.1.0 及更早版本成功登录返回该值），
+          # 仅供过渡期兼容旧客户端识别，新实现一律返回 access_token。
+          enum: [access_token, account, email_check]
         access_token:
           type: string
         user:

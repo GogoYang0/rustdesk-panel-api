@@ -57,7 +57,7 @@ func contractLogin(t *testing.T, cs *contractServer, password string) (int, map[
 func TestContractLoginAccount(t *testing.T) {
 	cs, _ := newAuthContractServer(t)
 	_, resp := contractLogin(t, cs, "databk")
-	if resp["type"] != "account" {
+	if resp["type"] != "access_token" {
 		t.Errorf("type = %v", resp["type"])
 	}
 	if tok, _ := resp["access_token"].(string); tok == "" {
@@ -389,7 +389,7 @@ func TestContractPasskeyLifecycle(t *testing.T) {
 	if err := json.Unmarshal(raw, &step2); err != nil {
 		t.Fatal(err)
 	}
-	if step2["type"] != "account" {
+	if step2["type"] != "access_token" {
 		t.Errorf("step2 type = %v", step2["type"])
 	}
 	if _, ok := step2["access_token"].(string); !ok {
