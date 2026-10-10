@@ -183,7 +183,7 @@ func (s *TfaService) completeStep(ctx context.Context, secret, code, method stri
 	payload := dto.BuildUserPayload(user)
 	return &api.LoginResponse{
 		AccessToken: &token,
-		Type:        api.LoginResponseTypeAccount,
+		Type:        api.LoginResponseTypeAccessToken,
 		User:        &payload,
 	}, nil
 }

@@ -159,7 +159,7 @@ func TestLoginAccountSuccess(t *testing.T) {
 	if status != 200 {
 		t.Fatalf("login status = %d: %v", status, parsed)
 	}
-	if got, _ := parsed["type"].(string); got != "account" {
+	if got, _ := parsed["type"].(string); got != "access_token" {
 		t.Errorf("type = %v, want account", parsed["type"])
 	}
 	token, _ := parsed["access_token"].(string)
@@ -437,7 +437,7 @@ func TestTfaFullFlow(t *testing.T) {
 		t.Fatalf("disable status = %d: %s", status, raw)
 	}
 	status, parsed = loginAs(t, ts.TS, "databk", "databk")
-	if got, _ := parsed["type"].(string); got != "account" {
+	if got, _ := parsed["type"].(string); got != "access_token" {
 		t.Errorf("after disable, type = %v, want account (login status=%d)", parsed["type"], status)
 	}
 }

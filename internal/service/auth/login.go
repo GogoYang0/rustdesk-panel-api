@@ -89,7 +89,7 @@ func (s *AuthService) completeLogin(ctx context.Context, user *entity.User, dev 
 	payload := dto.BuildUserPayload(user)
 	return &api.LoginResponse{
 		AccessToken: &token,
-		Type:        api.LoginResponseTypeAccount,
+		Type:        api.LoginResponseTypeAccessToken,
 		User:        &payload,
 	}, nil
 }

@@ -111,8 +111,9 @@ const (
 
 // Defines values for LoginResponseType.
 const (
-	LoginResponseTypeAccount    LoginResponseType = "account"
-	LoginResponseTypeEmailCheck LoginResponseType = "email_check"
+	LoginResponseTypeAccessToken LoginResponseType = "access_token"
+	LoginResponseTypeAccount     LoginResponseType = "account"
+	LoginResponseTypeEmailCheck  LoginResponseType = "email_check"
 )
 
 // Defines values for NexusBuildViewStatus.
@@ -1107,7 +1108,7 @@ type LoginRequest struct {
 // LoginRequestType defines model for LoginRequest.Type.
 type LoginRequestType string
 
-// LoginResponse 分支结构：account 带 access_token+user； 两步验证带 type=email_check + tfa_type + secret； passkey_tfa 第一步复用 email_check 类型位并附 passkey_options。
+// LoginResponse 分支结构：成功登录返回 type=access_token（兼容官方 RustDesk 客户端， 客户端以 type==access_token 且 access_token 非空作为登录完成条件）， 并带 access_token+user； 两步验证带 type=email_check + tfa_type + secret； passkey_tfa 第一步复用 email_check 类型位并附 passkey_options。
 type LoginResponse struct {
 	AccessToken    *string                 `json:"access_token,omitempty"`
 	PasskeyOptions *map[string]interface{} `json:"passkey_options,omitempty"`
