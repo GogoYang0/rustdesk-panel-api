@@ -69,8 +69,8 @@ func TestQATfaSetupPendingDoesNotActivate(t *testing.T) {
 	if status != 200 {
 		t.Fatalf("re-login status = %d: %s", status, raw)
 	}
-	if got, _ := parsed["type"].(string); got != "account" {
-		t.Fatalf("re-login type = %v, want account (pending must not force two-step)", got)
+	if got, _ := parsed["type"].(string); got != "access_token" {
+		t.Fatalf("re-login type = %v, want access_token (pending must not force two-step)", got)
 	}
 	if _, ok := parsed["access_token"].(string); !ok {
 		t.Fatalf("re-login missing access_token: %s", raw)

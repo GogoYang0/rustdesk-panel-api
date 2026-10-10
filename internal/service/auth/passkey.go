@@ -285,7 +285,7 @@ func (s *PasskeyService) VerifyAuthLogin(ctx context.Context, req dto.VerifyAuth
 	payload := dto.BuildUserPayload(user)
 	return &api.LoginResponse{
 		AccessToken: &token,
-		Type:        api.LoginResponseTypeAccount,
+		Type:        api.LoginResponseTypeAccessToken,
 		User:        &payload,
 	}, nil
 }
