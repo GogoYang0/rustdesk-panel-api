@@ -53,12 +53,13 @@ jobs:
       - name: publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           VERSION: ${{ needs.prepare.outputs.version }}
           PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
         run: |
           ARGS=(--title "rustdesk-panel-api v${VERSION}" --generate-notes)
           if [ "$PRERELEASE" = "true" ]; then ARGS+=(--prerelease); fi
-          gh release create "v${VERSION}" out/* "${ARGS[@]}"
+          gh release create "v${VERSION}" out/* "${ARGS[@]}" || gh release upload "v${VERSION}" out/* --clobber
 
   docker:
     needs: prepare
