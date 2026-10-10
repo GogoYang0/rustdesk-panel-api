@@ -85,10 +85,11 @@ func (s *Service) isSystemOwner(u *entity.User) bool {
 	return s.ownerUsername != "" && u.IsAdmin && u.Username == s.ownerUsername
 }
 
-// revokeActiveTokens 撤 token 兜底（共享知识 23）：user_tokens 全量
-// 置 isRevoked + 删除未使用 login_sessions；status 变更/security/
-// batch/force_logout/accept 五链路复用。
-func (s *Service) revokeActiveTokens(ctx context.Context, tx *gorm.DB, userGuid string) error {
+// revokeActiveTokensTx 撤 token 兜底事务体（共享知识 23）：user_tokens
+// 全量置 isRevoked + 删除未使用 login_sessions。必须在调用方事务内对
+// tx 执行，任一半边失败由外层 Transaction 统一回滚（MIN-04：改密链路
+// 与 status 变更/security/batch/force_logout/accept 五链路复用）。
+func revokeActiveTokensTx(tx *gorm.DB, userGuid string) error {
 	now := time.Now()
 	if err := tx.Model(&entity.UserToken{}).
 		Where("userGuid = ? AND isRevoked = ? AND expiresAt > ?", userGuid, false, now).
@@ -97,6 +98,12 @@ func (s *Service) revokeActiveTokens(ctx context.Context, tx *gorm.DB, userGuid 
 	}
 	return tx.Where("userGuid = ? AND used = ?", userGuid, false).
 		Delete(&entity.LoginSession{}).Error
+}
+
+// revokeActiveTokens 在传入事务内撤 token 兜底（共享知识 23）：
+// status 变更/security/batch/force_logout/accept 五链路复用。
+func (s *Service) revokeActiveTokens(ctx context.Context, tx *gorm.DB, userGuid string) error {
+	return revokeActiveTokensTx(tx, userGuid)
 }
 
 // userViewOf 实体 → UserView（Name = displayName 非空 ? displayName :
