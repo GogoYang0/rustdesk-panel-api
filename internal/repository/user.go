@@ -300,10 +300,15 @@ func (r *UserRepo) RoleNamesByGuids(ctx context.Context, guids []string) (map[st
 
 // DeleteWithRelated 事务删除用户及其私有从属（应用层显式级联，共享
 // 知识 9）：tokens/sessions/passkeys/assignments(+组范围)/uup 双侧/
-// dgup/邀请引用置空；peers 归属保留（设备不随用户删除）。console_audits
-// 保留（审计历史独立生命周期）。
+// dgup/邀请引用置空；GAP2 起设备个人归属一并清空（peers.userGuid 置
+// NULL，防悬挂属主，设计 §2.2）；console_audits/login_audits 保留
+// （审计历史独立生命周期）。
 func (r *UserRepo) DeleteWithRelated(ctx context.Context, guid string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&entity.Peer{}).Where("userGuid = ?", guid).
+			Update("userGuid", nil).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("userGuid = ?", guid).Delete(&entity.UserToken{}).Error; err != nil {
 			return err
 		}

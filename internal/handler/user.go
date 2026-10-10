@@ -11,20 +11,23 @@ import (
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/middleware"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/rbac"
 	authsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/auth"
+	devicesvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/device"
 	usersvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/user"
 )
 
 // UserHandler 用户域端点：M1 自身资料/头像（profile/avatar）+
-// M3 管理端用户 CRUD/批量/邀请/安全（svc）。
+// M3 管理端用户 CRUD/批量/邀请/安全（svc）+ GAP2 设备归属查询（devices）。
 type UserHandler struct {
 	profile *usersvc.ProfileService
 	avatar  *usersvc.AvatarService
 	svc     *usersvc.Service
+	devices *devicesvc.AssignService
 }
 
-// NewUserHandler 构建 handler。
-func NewUserHandler(profile *usersvc.ProfileService, avatar *usersvc.AvatarService, svc *usersvc.Service) *UserHandler {
-	return &UserHandler{profile: profile, avatar: avatar, svc: svc}
+// NewUserHandler 构建 handler（devices 归属域服务，GAP2）。
+func NewUserHandler(profile *usersvc.ProfileService, avatar *usersvc.AvatarService,
+	svc *usersvc.Service, devices *devicesvc.AssignService) *UserHandler {
+	return &UserHandler{profile: profile, avatar: avatar, svc: svc, devices: devices}
 }
 
 // writeUserError 用户域错误出口：业务错误（ServiceError，message 为
@@ -345,4 +348,29 @@ func (h *UserHandler) ListAdminUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, res)
+}
+
+// ListMyDevices GET /api/users/me/devices（auth 档：登录即用，不设权限
+// 码；GAP2 设计 §2.3 #2）。仅当前用户名下设备，精简 MyDeviceView（OQ-4）。
+func (h *UserHandler) ListMyDevices(w http.ResponseWriter, r *http.Request) {
+	ident := middleware.IdentityFromContext(r.Context())
+	q := dto.ParsePaginationQuery(r.URL.Query())
+	page, err := h.devices.MyDevices(r.Context(), ident.UserGuid, q)
+	if err != nil {
+		writeUserError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, page)
+}
+
+// ListUserDevices GET /api/users/{guid}/devices（users.view 档在路由；
+// GAP2 设计 §2.3 #3）。目标用户不存在 404；行形状复用 DeviceView 分页。
+func (h *UserHandler) ListUserDevices(w http.ResponseWriter, r *http.Request) {
+	q := dto.ParsePaginationQuery(r.URL.Query())
+	page, err := h.devices.UserDevices(r.Context(), r.PathValue("guid"), q)
+	if err != nil {
+		writeUserError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, page)
 }
