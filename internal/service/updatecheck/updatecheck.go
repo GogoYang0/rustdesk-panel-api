@@ -254,18 +254,25 @@ type branchOut struct {
 // checkBranch 拉取单分支 GitHub Releases latest 并组装（不可达时回退
 // 无更新）。current 基准 = 面板版本号（applyFrontendVersion 会以查询
 // 参数覆盖 frontend.current）。
+//
+// ★ v0.2.1 MIN-01：latest/changelog/downloadUrl 始终来自 GitHub 响应
+// （可达时），与 hasUpdate 解耦——hasUpdate 只是比较结果。否则
+// 「backend 版本 ≥ latest 且 frontend_version < latest」错位场景下
+// （缓存以 backend 版本判 hasUpdate=false 而未回填），frontend 分支
+// 重算 hasUpdate=true 后 changelog/downloadUrl 为 null。
 func (s *Service) checkBranch(ctx context.Context, repo, current string) branchOut {
 	rel, err := s.fetchGitHubRelease(ctx, repo)
 	if err != nil {
 		return branchOut{Current: current, Latest: current}
 	}
 	latest := strings.TrimPrefix(strings.TrimSpace(rel.TagName), "v")
-	out := branchOut{Current: current, Latest: latest}
-	out.HasUpdate = compareVersion(latest, current) > 0
-	if out.HasUpdate {
-		out.DownloadURL = rel.HTMLURL
-		out.Changelog = rel.Body
+	out := branchOut{
+		Current:     current,
+		Latest:      latest,
+		DownloadURL: rel.HTMLURL,
+		Changelog:   rel.Body,
 	}
+	out.HasUpdate = compareVersion(latest, current) > 0
 	return out
 }
 
@@ -450,13 +457,15 @@ func (s *Service) postUpstream(ctx context.Context, payload dto.UpdateCheckPaylo
 }
 
 // applyFrontendVersion 仅替换 frontend 分支的比对基准（内存缓存共享，
-// 不因查询参数污染缓存本体）。
+// 不因查询参数污染缓存本体）。hasUpdate=false 时同步清空
+// changelog/downloadUrl（无更新不提供下载入口，避免缓存残留过期文案）。
 func applyFrontendVersion(base dto.UpdateCheckResultView, frontendVersion string) dto.UpdateCheckResultView {
 	out := base
 	out.Frontend.Current = frontendVersion
 	out.Frontend.HasUpdate = compareVersion(out.Frontend.Latest, frontendVersion) > 0
 	if !out.Frontend.HasUpdate {
 		out.Frontend.DownloadUrl = nil
+		out.Frontend.Changelog = nil
 	}
 	return out
 }
