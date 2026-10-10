@@ -46,6 +46,23 @@ func (r *UserGroupRepo) FindByNameCI(ctx context.Context, name string) (*entity.
 	return &g, nil
 }
 
+// NameMapByGuids 批量 guid → name 映射（强制 MFA 冲突名单标注来源组用；
+// 未命中 guid 静默跳过）。
+func (r *UserGroupRepo) NameMapByGuids(ctx context.Context, guids []string) (map[string]string, error) {
+	out := make(map[string]string, len(guids))
+	if len(guids) == 0 {
+		return out, nil
+	}
+	rows := make([]entity.UserGroup, 0, len(guids))
+	if err := r.db.WithContext(ctx).Where("guid IN ?", guids).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, g := range rows {
+		out[g.Guid] = g.Name
+	}
+	return out, nil
+}
+
 // ListPaged 分页查询（name LIKE 过滤可空；normalizedName ASC、guid ASC
 // 决胜排序，openapi 契约）。
 func (r *UserGroupRepo) ListPaged(ctx context.Context, name string, q Query) ([]entity.UserGroup, int64, error) {

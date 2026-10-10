@@ -1,10 +1,14 @@
-// Package updatecheck 本文件：版本更新检查（设计事实④，M3 T07）。
+// Package updatecheck 本文件：版本更新检查（v0.2.1 改版：版本源 =
+// GitHub Releases）。
 //
-// 每小时后台 POST {NEXUS_UPSTREAM}/v1/update/check（15s 超时），遥测 payload
-// 含 version/deployment(channel+install_id)/system/runtime/database/
-// statistics；install_id 落 system_settings（key=system.installId，含 legacy
-// key 迁移）；结果内存缓存 + frontend_version 持久化（category=update_check）。
-// 查询参数 frontend_version 仅影响响应中 frontend 分支的比对基准。
+// 前端分支 ← https://api.github.com/repos/GogoYang0/rustdesk-panel-web/releases/latest；
+// 后端分支 ← 同主 GogoYang0/rustdesk-panel-api。tag_name 去前导 v 即
+// latest，release body 为 changelog，html_url 为 downloadUrl；GitHub
+// 不可达时该分支回退 current==latest、hasUpdate=false（不阻断面板）。
+// 保留每小时遥测 POST {NEXUS_UPSTREAM}/v1/update/check（best-effort，
+// 失败仅记日志不影响版本结果）；install_id 落 system_settings
+// （key=system.installId，含 legacy key 迁移）；结果内存缓存 +
+// frontend_version 持久化（category=update_check）。
 package updatecheck
 
 import (
@@ -14,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -44,8 +49,24 @@ const (
 	categoryUpdateCheck  = "update_check"
 )
 
-// updateCheckPath 上游检查路径。
+// updateCheckPath 上游遥测路径。
 const updateCheckPath = "/v1/update/check"
+
+// GitHub Releases 版本源（v0.2.1 问题 12）。
+const (
+	githubAPIBase      = "https://api.github.com"
+	githubWebRepo      = "GogoYang0/rustdesk-panel-web"
+	githubBackendRepo  = "GogoYang0/rustdesk-panel-api"
+	githubTimeout      = 10 * time.Second
+	githubAcceptHeader = "application/vnd.github+json"
+)
+
+// githubRelease GitHub Releases latest 响应（仅取所需字段）。
+type githubRelease struct {
+	TagName string `json:"tag_name"`
+	Body    string `json:"body"`
+	HTMLURL string `json:"html_url"`
+}
 
 // requestTimeout 上游请求超时（设计事实④：15s）。
 const requestTimeout = 15 * time.Second
@@ -77,6 +98,13 @@ type Service struct {
 	counters Counters
 	// client 可注入 HTTP 客户端（测试用）；默认 15s 超时客户端。
 	client *http.Client
+	// githubClient GitHub Releases 客户端（10s 超时；测试可注入
+	// githubBase 覆写基址）。
+	githubClient *http.Client
+	// githubBase GitHub API 基址（测试覆写；默认 https://api.github.com）。
+	githubBase string
+	// logger 遥测失败告警（可为 nil）。
+	logger *slog.Logger
 	// now 可注入虚拟时钟（测试用）；默认 time.Now。
 	now func() time.Time
 
@@ -95,8 +123,10 @@ type Counters interface {
 
 // Options 构建参数。
 type Options struct {
-	// Upstream 上游基址（NEXUS_UPSTREAM，仅测试覆写）。
+	// Upstream 上游基址（NEXUS_UPSTREAM 遥测，仅测试覆写）。
 	Upstream string
+	// GitHubBase GitHub API 基址（仅测试覆写；空=官方 api.github.com）。
+	GitHubBase string
 	// Version 面板版本号。
 	Version string
 	// Channel 更新渠道（UPDATE_CHANNEL，env fallback）。
@@ -113,14 +143,20 @@ func NewService(opts Options) *Service {
 	if !IsValidChannel(channel) {
 		channel = defaultChannel
 	}
+	githubBase := opts.GitHubBase
+	if githubBase == "" {
+		githubBase = githubAPIBase
+	}
 	return &Service{
-		upstream: strings.TrimRight(opts.Upstream, "/"),
-		version:  opts.Version,
-		channel:  channel,
-		settings: opts.Settings,
-		counters: opts.Counters,
-		client:   &http.Client{Timeout: requestTimeout},
-		now:      time.Now,
+		upstream:     strings.TrimRight(opts.Upstream, "/"),
+		version:      opts.Version,
+		channel:      channel,
+		settings:     opts.Settings,
+		counters:     opts.Counters,
+		client:       &http.Client{Timeout: requestTimeout},
+		githubClient: &http.Client{Timeout: githubTimeout},
+		githubBase:   githubBase,
+		now:          time.Now,
 	}
 }
 
@@ -149,7 +185,8 @@ func (s *Service) Get(ctx context.Context, frontendVersion string) (dto.UpdateCh
 	}
 	result, err := s.Refresh(ctx)
 	if err != nil {
-		// 上游不可用时不阻断面板：返回零更新结果（hasUpdate=false）。
+		// install_id 等基础设施故障不阻断面板：返回零更新结果
+		// （hasUpdate=false）。
 		fallback := dto.UpdateCheckResultView{}
 		fallback.Backend.Current = s.version
 		fallback.Backend.Latest = s.version
@@ -162,25 +199,141 @@ func (s *Service) Get(ctx context.Context, frontendVersion string) (dto.UpdateCh
 	return applyFrontendVersion(result, frontendVersion), nil
 }
 
-// Refresh 立即执行一次上游检查并刷新缓存（cron 与首请求共用）。
+// Refresh 立即执行一次版本检查并刷新缓存（cron 与首请求共用）：
+//
+//  1. install_id（生成/迁移）；
+//  2. 遥测 POST {NEXUS_UPSTREAM}/v1/update/check（best-effort，失败
+//     仅记日志——v0.2.1 起版本源改为 GitHub，上游不再决定版本结果）；
+//  3. GitHub Releases latest（frontend←web 仓 / backend←api 仓），
+//     任一分支不可达时该分支回退 current==latest、hasUpdate=false。
 func (s *Service) Refresh(ctx context.Context) (dto.UpdateCheckResultView, error) {
 	installID, err := s.InstallID(ctx)
 	if err != nil {
 		return dto.UpdateCheckResultView{}, err
 	}
-	payload, err := s.buildPayload(ctx, installID)
-	if err != nil {
-		return dto.UpdateCheckResultView{}, err
-	}
-	upstream, err := s.postUpstream(ctx, payload)
-	if err != nil {
-		return dto.UpdateCheckResultView{}, err
-	}
-	result := s.buildResult(upstream, installID, "")
+	s.telemetryBestEffort(ctx, installID)
+
+	var result dto.UpdateCheckResultView
+	applyBranch(&result.Backend.Current, &result.Backend.Latest,
+		&result.Backend.HasUpdate, &result.Backend.DownloadUrl, &result.Backend.Changelog,
+		s.checkBranch(ctx, githubBackendRepo, s.version))
+	applyBranch(&result.Frontend.Current, &result.Frontend.Latest,
+		&result.Frontend.HasUpdate, &result.Frontend.DownloadUrl, &result.Frontend.Changelog,
+		s.checkBranch(ctx, githubWebRepo, s.version))
+	result.InstallId = &installID
 	s.mu.Lock()
 	s.cache = &result
 	s.mu.Unlock()
 	return result, nil
+}
+
+// applyBranch 分支结果写入响应视图（可空字段空串归 nil）。
+func applyBranch(current, latest *string, hasUpdate *bool, downloadURL, changelog **string, out branchOut) {
+	*current = out.Current
+	*latest = out.Latest
+	*hasUpdate = out.HasUpdate
+	if out.DownloadURL != "" {
+		u := out.DownloadURL
+		*downloadURL = &u
+	}
+	if out.Changelog != "" {
+		c := out.Changelog
+		*changelog = &c
+	}
+}
+
+// branchOut 单分支检查输出。
+type branchOut struct {
+	Current     string
+	Latest      string
+	HasUpdate   bool
+	DownloadURL string
+	Changelog   string
+}
+
+// checkBranch 拉取单分支 GitHub Releases latest 并组装（不可达时回退
+// 无更新）。current 基准 = 面板版本号（applyFrontendVersion 会以查询
+// 参数覆盖 frontend.current）。
+//
+// ★ v0.2.1 MIN-01：latest/changelog/downloadUrl 始终来自 GitHub 响应
+// （可达时），与 hasUpdate 解耦——hasUpdate 只是比较结果。否则
+// 「backend 版本 ≥ latest 且 frontend_version < latest」错位场景下
+// （缓存以 backend 版本判 hasUpdate=false 而未回填），frontend 分支
+// 重算 hasUpdate=true 后 changelog/downloadUrl 为 null。
+func (s *Service) checkBranch(ctx context.Context, repo, current string) branchOut {
+	rel, err := s.fetchGitHubRelease(ctx, repo)
+	if err != nil {
+		return branchOut{Current: current, Latest: current}
+	}
+	latest := strings.TrimPrefix(strings.TrimSpace(rel.TagName), "v")
+	out := branchOut{
+		Current:     current,
+		Latest:      latest,
+		DownloadURL: rel.HTMLURL,
+		Changelog:   rel.Body,
+	}
+	out.HasUpdate = compareVersion(latest, current) > 0
+	return out
+}
+
+// telemetryBestEffort 遥测上报（设计事实④保留项）：upstream 为空或
+// 请求失败时静默跳过（记日志）。
+func (s *Service) telemetryBestEffort(ctx context.Context, installID string) {
+	if s.upstream == "" {
+		return
+	}
+	payload, err := s.buildPayload(ctx, installID)
+	if err != nil {
+		s.logWarn("update-check: build payload failed", err)
+		return
+	}
+	if _, err := s.postUpstream(ctx, payload); err != nil && s.logger != nil {
+		s.logWarn("update-check: telemetry upstream failed", err)
+	}
+}
+
+// logWarn nil 安全告警。
+func (s *Service) logWarn(msg string, err error) {
+	if s.logger != nil {
+		s.logger.Warn(msg, "error", err.Error())
+	}
+}
+
+// WithLogger 注入日志器（bootstrap 装配）。
+func (s *Service) WithLogger(l *slog.Logger) *Service {
+	s.logger = l
+	return s
+}
+
+// fetchGitHubRelease GET {githubBase}/repos/{repo}/releases/latest
+// （10s 超时、Accept vnd.github+json、UA 必填）。
+func (s *Service) fetchGitHubRelease(ctx context.Context, repo string) (githubRelease, error) {
+	reqCtx, cancel := context.WithTimeout(ctx, githubTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet,
+		s.githubBase+"/repos/"+repo+"/releases/latest", nil)
+	if err != nil {
+		return githubRelease{}, fmt.Errorf("update-check: build github request failed: %w", err)
+	}
+	req.Header.Set("Accept", githubAcceptHeader)
+	req.Header.Set("User-Agent", "rustdesk-panel")
+	resp, err := s.githubClient.Do(req)
+	if err != nil {
+		return githubRelease{}, fmt.Errorf("update-check: github request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+	if err != nil {
+		return githubRelease{}, fmt.Errorf("update-check: read github response failed: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return githubRelease{}, fmt.Errorf("update-check: github returned status %d", resp.StatusCode)
+	}
+	var out githubRelease
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return githubRelease{}, fmt.Errorf("update-check: decode github response failed: %w", err)
+	}
+	return out, nil
 }
 
 // InstallID 读取（必要时生成并迁移）安装实例 id。
@@ -303,42 +456,16 @@ func (s *Service) postUpstream(ctx context.Context, payload dto.UpdateCheckPaylo
 	return out, nil
 }
 
-// buildResult 上游结果 → 面板响应（缺分支时回退当前版本，hasUpdate=false）。
-func (s *Service) buildResult(upstream dto.UpdateCheckUpstream, installID, frontendVersion string) dto.UpdateCheckResultView {
-	out := dto.UpdateCheckResultView{}
-	out.Backend.Current = s.version
-	out.Backend.Latest = s.version
-	if upstream.Backend != nil && upstream.Backend.Version != "" {
-		out.Backend.Latest = upstream.Backend.Version
-		out.Backend.HasUpdate = compareVersion(upstream.Backend.Version, s.version) > 0
-		if out.Backend.HasUpdate && upstream.Backend.DownloadURL != "" {
-			url := upstream.Backend.DownloadURL
-			out.Backend.DownloadUrl = &url
-		}
-	}
-	out.Frontend.Current = frontendVersion
-	out.Frontend.Latest = frontendVersion
-	if upstream.Frontend != nil && upstream.Frontend.Version != "" {
-		out.Frontend.Latest = upstream.Frontend.Version
-		out.Frontend.HasUpdate = compareVersion(upstream.Frontend.Version, frontendVersion) > 0
-		if out.Frontend.HasUpdate && upstream.Frontend.DownloadURL != "" {
-			url := upstream.Frontend.DownloadURL
-			out.Frontend.DownloadUrl = &url
-		}
-	}
-	id := installID
-	out.InstallId = &id
-	return out
-}
-
 // applyFrontendVersion 仅替换 frontend 分支的比对基准（内存缓存共享，
-// 不因查询参数污染缓存本体）。
+// 不因查询参数污染缓存本体）。hasUpdate=false 时同步清空
+// changelog/downloadUrl（无更新不提供下载入口，避免缓存残留过期文案）。
 func applyFrontendVersion(base dto.UpdateCheckResultView, frontendVersion string) dto.UpdateCheckResultView {
 	out := base
 	out.Frontend.Current = frontendVersion
 	out.Frontend.HasUpdate = compareVersion(out.Frontend.Latest, frontendVersion) > 0
 	if !out.Frontend.HasUpdate {
 		out.Frontend.DownloadUrl = nil
+		out.Frontend.Changelog = nil
 	}
 	return out
 }

@@ -35,6 +35,12 @@ func (h *StrategyHandler) List(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, page)
 }
 
+// Presets GET /api/strategies/presets（Perm(strategies.view)）：
+// 策略配置项预设目录（编译期常量，v0.2.1 问题 8）。
+func (h *StrategyHandler) Presets(w http.ResponseWriter, _ *http.Request) {
+	httpx.WriteJSON(w, http.StatusOK, strategysvc.Presets())
+}
+
 // Get GET /api/strategies/{guid}（Perm(strategies.view)）。
 func (h *StrategyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	view, err := h.svc.Get(r.Context(), r.PathValue("guid"))

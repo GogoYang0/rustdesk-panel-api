@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/api"
@@ -62,9 +63,11 @@ func (s *ReportService) ReportConn(ctx context.Context, req api.ConnAuditReport)
 	}
 
 	row := &entity.ConnectionAudit{
-		DeviceId:     req.Id,
-		DeviceUuid:   req.Uuid,
-		ConnId:       req.ConnId,
+		DeviceId:   req.Id,
+		DeviceUuid: req.Uuid,
+		// 官方客户端 conn_id 为数值（self.inner.id i32）；契约 integer
+		// 承载，落库转字符串（v0.2.1 修复：此前 string 契约直接 400）。
+		ConnId:       connIDStr(req.ConnId),
 		SessionId:    req.SessionId,
 		Ip:           emptyStrPtr(req.Ip),
 		Action:       derefStr(req.Action),
@@ -119,20 +122,20 @@ func (s *ReportService) ReportFile(ctx context.Context, req api.FileAuditReport)
 
 	now := time.Now()
 	row := &entity.FileAudit{
-		DeviceId:    req.Id,
-		DeviceUuid:  req.Uuid,
-		PeerId:      req.PeerId,
-		ConnId:      req.ConnId,
-		Type:        int(req.Type),
-		Path:        derefStr(req.Path),
-		IsFile:      req.IsFile,
-		ClientIp:    &info.Ip,
-		ClientName:  &info.Name,
-		FileCount:   info.Num,
-		Files:       filesJSON,
-		Nonce:       req.Nonce,
+		DeviceId:   req.Id,
+		DeviceUuid: req.Uuid,
+		PeerId:     req.PeerId,
+		ConnId:     connIDStr(req.ConnId),
+		Type:       int(req.Type),
+		Path:       derefStr(req.Path),
+		IsFile:     req.IsFile,
+		ClientIp:   &info.Ip,
+		ClientName: &info.Name,
+		FileCount:  info.Num,
+		Files:      filesJSON,
+		Nonce:      req.Nonce,
 		RequestedAt: now,
-		CreatedAt:   now,
+		CreatedAt:  now,
 	}
 	if _, _, err := s.files.UpsertByNonce(ctx, row); err != nil {
 		return "", err
@@ -154,7 +157,7 @@ func (s *ReportService) ReportAlarm(ctx context.Context, req api.AlarmAuditRepor
 		InfoId:       info.Id,
 		InfoIp:       &info.Ip,
 		InfoName:     info.Name,
-		ConnId:       req.ConnId,
+		ConnId:       connIDStr(req.ConnId),
 		Nonce:        req.Nonce,
 		ConnAuditRef: req.ConnAuditRef,
 		CreatedAt:    now,
@@ -203,6 +206,16 @@ func parseAlarmInfo(raw string) alarmInfo {
 		info.Name = nil
 	}
 	return info
+}
+
+// connIDStr 数值 conn_id → 字符串（nil → nil；官方客户端
+// post_conn_audit 的 self.inner.id 为 i32 数值）。
+func connIDStr(p *int) *string {
+	if p == nil {
+		return nil
+	}
+	v := strconv.Itoa(*p)
+	return &v
 }
 
 // emptyStrPtr 空串归一化为 ""（参考 createNewConnection：ip=dto.ip||”

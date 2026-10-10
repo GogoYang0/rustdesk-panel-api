@@ -2,11 +2,13 @@ package entity
 
 import "time"
 
-// ConnectionAudit action 取值（设计事实②：conn 上报 upsert 状态机）。
+// ConnectionAudit action 取值（设计事实②：conn 上报 upsert 状态机；
+// 'close' 为官方客户端连接关闭上报，置 closedAt——v0.2.1 修复）。
 const (
 	ConnActionNew         = "new"         // 首报落库
 	ConnActionOpen        = "open"        // 二次 action='new' → 迁移
 	ConnActionEstablished = "established" // action='' → 迁移 + establishedAt
+	ConnActionClose       = "close"       // 连接关闭 → closedAt
 )
 
 // ConnectionAudit connection_audits 表实体：连接审计（上报端 Public

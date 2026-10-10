@@ -41,7 +41,7 @@ func tagListOut(rows []entity.AddressBookTag) api.AbTagList {
 	data := make([]api.AbTag, 0, len(rows))
 	colors := make(map[string]uint32, len(rows))
 	for _, t := range rows {
-		data = append(data, api.AbTag{Guid: t.Guid, Name: t.Name, Color: int32(t.Color)})
+		data = append(data, api.AbTag{Guid: t.Guid, Name: t.Name, Color: int64(t.Color)})
 		colors[t.Name] = t.Color
 	}
 	var colorsStr *string
@@ -56,7 +56,7 @@ func tagListOut(rows []entity.AddressBookTag) api.AbTagList {
 
 // tagOut 单标签行输出。
 func tagOut(t *entity.AddressBookTag) api.AbTag {
-	return api.AbTag{Guid: t.Guid, Name: t.Name, Color: int32(t.Color)}
+	return api.AbTag{Guid: t.Guid, Name: t.Name, Color: int64(t.Color)}
 }
 
 // Tags GET /api/ab/tags/{guid}：READ 复核；全量标签 + tag_colors。

@@ -4,6 +4,35 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 简化版。
 
+## [0.3.0] - 2026-10-11
+
+定级说明：本批次最高级别为 [feature]（新增端点 + 契约兼容扩展），按定级规则升 minor：v0.2.0 → v0.3.0。
+
+### 新增
+
+- **[feature] 策略配置项预设目录**：新增 `GET /api/strategies/presets`（Perm `strategies.view`）——编译期常量表 **72 项**，键全集取自官方客户端 `libs/base/src/config/keys.rs` 策略相关子集，按 security / connection / display / permission / other 五分类，含 key / type / default_value / description（契约新增 `StrategyOptionPreset`）。
+- **[feature] 强制 MFA 开启前置校验与组内解绑守卫**：`PUT /api/settings/mfa` 开启 `enforceGlobal` 或新增强制组前，校验目标用户中存在未绑定 TOTP 且未开启 passkey-2FA 者 → 400 拒绝（契约新增 `MfaEnforcementConflict`，返回未绑定名单 guid / username / display_name / user_group_name）；`DELETE /api/2fa` 与 `DELETE /api/passkey/{guid}` 命中强制策略 → 403 拒绝解绑，需先移出强制范围。
+- **[feature] 更新检查对接 GitHub Releases**：frontend / backend 版本源分别改为 `GogoYang0/rustdesk-panel-web`、`GogoYang0/rustdesk-panel-api` 的 `/releases/latest`（tag_name 去 `v` 即 latest，release body 即 changelog，html_url 即 downloadUrl）；10s 超时，GitHub 不可达回退 current==latest 无更新；遥测上报保留 best-effort（`GITHUB_API_BASE` env 供测试覆写）。
+
+### 变更
+
+- 契约兼容扩展：审计上报 `conn_id` string→**integer**、标签 `color` int32→**int64**、`GET /api/devices` 新增 `guid` 精确过滤查询参数、更新检查响应新增 `changelog` / `downloadUrl` 字段；openapi.yaml 173 operation。
+- 更新检查版本错位场景（MIN-01）：`latest` / `changelog` / `downloadUrl` 在 GitHub 可达时始终来自 GitHub 响应，`hasUpdate` 仅作比较结果；`applyFrontendVersion` 无更新时同步清空 release 信息（含单测覆盖 backend≥latest 且 frontend<latest 错位场景）。
+
+### 修复（官方客户端协议兼容，对照 rustdesk master 逐字取证）
+
+- 审计上报 `conn_id` 数值上报：官方 `post_conn_audit` 的 `self.inner.id` 为 i32 数值，此前 string 契约直接 400，为审计四页无数据根因；服务端落库仍转字符串。
+- 审计上报 `action='close'` 正确落 `closedAt`（此前被幂等分支吞掉，活跃连接永不关闭）。
+- 通讯录（ab）端点容忍官方客户端 Content-Length:0 空 body POST + query 传参：ab / id / alias / tags / tagMode 自 query 回填；`ab/tags` 空 body 语义为拉取标签列表（等价 GET），非空体才全量替换 → 修复拉取通讯录 400。
+- 标签 `color` 越界：int32→int64（官方 Dart `Color.value` 为 0xAARRGGBB 无符号 32 位，可超 int32 上限）→ 修复添加标签 400。
+- 断开连接 `connIds` 契约放宽（去 required / minItems）：空数组/缺省 = 断开该设备全部活跃连接（从连接审计未关闭行收集数值 connId 入队，心跳以 disconnect 键下发）→ 修复 web 整机断开 400。
+- 设备详情 `guid` 精确查询：`listDevices` 新增 guid 过滤（设备名 / 用户名 LIKE sysinfos 列）→ 配合 web 设备详情页定位修复。
+
+### 兼容性
+
+- 本批次契约均为兼容性扩展（新增字段 / 放宽校验 / 新增可选查询参数），无破坏性变更；**部署请 api / web 同步升级**（web v0.3.0 已适配 changelog 展示、guid 查询与 connIds 空数组语义）。
+- v0 阶段稳定性提醒：接口仍可能随官方客户端取证结果微调，生产部署请锁定版本并关注后续 changelog。
+
 ## v0.2.0（2026-10-11）
 
 ### 新增

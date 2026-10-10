@@ -1005,6 +1005,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: guid
+          in: query
+          required: false
+          description: 设备 guid 精确过滤（peers.uuid；设备详情页定位单设备用）
+          schema:
+            type: string
         - name: status
           in: query
           required: false
@@ -1494,6 +1500,31 @@ paths:
           $ref: "#/components/responses/Error"
 
   # ==================== M2 策略域 ====================
+  /api/strategies/presets:
+    get:
+      summary: 策略配置项预设值目录（strategies.view）
+      description: >-
+        编译期常量表：可经策略 config_options 下发的 option 键白名单，
+        取自官方客户端 keys.rs（libs/base/src/config/keys.rs）可消费键的
+        策略相关子集，按 category 分类。web 策略编辑器按此渲染预设项。
+      operationId: listStrategyPresets
+      tags: [strategy]
+      responses:
+        "200":
+          description: 预设项列表（key ASC 排序）
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StrategyOptionPreset"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/strategies:
     get:
       summary: 策略列表（strategies.view）
@@ -4800,7 +4831,11 @@ paths:
           $ref: "#/components/responses/Error"
     put:
       summary: 强制 MFA 策略更新（AdminGuard）
-      description: enforceGlobal 必填；userGroupGuids 换行列表存储。
+      description: >-
+        enforceGlobal 必填；userGroupGuids 换行列表存储。开启 enforceGlobal
+        或将用户组加入 userGroupGuids 前，服务端检查目标用户中是否存在
+        未绑定 TOTP/passkey-2FA 的用户，存在则 400 拒绝并在响应体返回
+        未绑定用户名单（MfaEnforcementConflict）。
       operationId: updateMfaSettings
       tags: [settings]
       requestBody:
@@ -4817,7 +4852,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/MfaSettings"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: 目标用户存在未绑定 2FA 者（响应含未绑定用户名单）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MfaEnforcementConflict"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -5824,13 +5863,15 @@ components:
     DisconnectRequest:
       type: object
       additionalProperties: false
-      required: [connIds]
+      description: >-
+        connIds 缺省或空数组 = 断开该设备全部活跃连接（服务端从连接审计
+        未关闭行收集 connId 入队）；非空 = 仅断开指定连接。web 端
+        「断开连接」整机动作传空数组。
       properties:
         connIds:
           type: array
           items:
             type: integer
-          minItems: 1
 
     DisconnectResult:
       type: object
@@ -5964,6 +6005,32 @@ components:
             $ref: "#/components/schemas/StrategyView"
         total:
           type: integer
+
+    StrategyOptionPreset:
+      type: object
+      description: >-
+        策略配置项预设（编译期常量，GET /api/strategies/presets 下发）。
+        key 取自官方客户端 keys.rs 可消费键；type 为值形态（bool 项取值
+        "Y"/"N"/""——空串=回退内置默认）。
+      required: [key, category, type, default_value, description]
+      properties:
+        key:
+          type: string
+        category:
+          type: string
+          enum: [security, connection, display, permission, other]
+          description: 分类：security=安全 / connection=连接 / display=显示 /
+            permission=权限 / other=其他
+        type:
+          type: string
+          enum: [bool, string, int]
+          description: 值形态；bool 项取值 "Y"/"N"（空串=未设置）
+        default_value:
+          type: string
+          description: 内置默认值（未设置时客户端行为；空串=回退内置默认）
+        description:
+          type: string
+          description: 中文说明（web 展示用）
 
     StrategyCandidateView:
       type: object
@@ -6929,7 +6996,8 @@ components:
 
     AbTag:
       type: object
-      description: 地址簿标签（color 为 ARGB uint）。
+      description: 地址簿标签（color 为 ARGB uint32——官方客户端 Dart Color.value
+        取值 0xAARRGGBB，最高位 0xFF，可超 int32 上限，故契约用 int64 承载）。
       required: [guid, name, color]
       properties:
         guid:
@@ -6938,7 +7006,9 @@ components:
           type: string
         color:
           type: integer
-          format: int32
+          format: int64
+          minimum: 0
+          maximum: 4294967295
 
     AbTagList:
       type: object
@@ -6967,18 +7037,23 @@ components:
                 type: string
               color:
                 type: integer
-                format: int32
+                format: int64
+                minimum: 0
+                maximum: 4294967295
 
     AbTagUpsertRequest:
       type: object
-      description: 新增标签（同名 409）/更新颜色。
+      description: 新增标签（同名 409）/更新颜色。color 为 ARGB uint32（官方
+        客户端 str2color 产物可超 int32）。
       required: [name, color]
       properties:
         name:
           type: string
         color:
           type: integer
-          format: int32
+          format: int64
+          minimum: 0
+          maximum: 4294967295
 
     AbTagRenameRequest:
       type: object
@@ -7059,7 +7134,9 @@ components:
       type: object
       description: >-
         连接审计上报（Public + per-IP 50/min；upsert：按 id+uuid+conn_id 定位，
-        action='new'→'open'、''→'established'）。
+        action='new'→'open'、''→'established'、'close'→closedAt）。官方客户端
+        （rustdesk src/server/connection.rs post_conn_audit）conn_id 为数值
+        self.inner.id（i32），契约按 integer 承载，服务端落库转字符串。
       required: [id]
       properties:
         id:
@@ -7069,7 +7146,8 @@ components:
           type: string
           description: 设备 uuid
         conn_id:
-          type: string
+          type: integer
+          description: 客户端内部连接序号（数值）
         session_id:
           type: string
         ip:
@@ -7115,7 +7193,8 @@ components:
         peer_id:
           type: string
         conn_id:
-          type: string
+          type: integer
+          description: 客户端内部连接序号（数值）
         type:
           type: integer
           enum: [0, 1]
@@ -7147,7 +7226,8 @@ components:
           type: string
           description: JSON 字符串原样落库
         conn_id:
-          type: string
+          type: integer
+          description: 客户端内部连接序号（数值）
         nonce:
           type: string
         conn_audit_ref:
@@ -7938,6 +8018,9 @@ components:
               type: boolean
             downloadUrl:
               type: string
+            changelog:
+              type: string
+              description: 最新版本 release notes（GitHub Releases body；缺省 null）
         frontend:
           type: object
           required: [current, latest, hasUpdate]
@@ -7950,8 +8033,44 @@ components:
               type: boolean
             downloadUrl:
               type: string
+            changelog:
+              type: string
+              description: 最新版本 release notes（GitHub Releases body；缺省 null）
         install_id:
           type: string
+
+    MfaEnforcementConflict:
+      type: object
+      description: >-
+        强制 MFA 策略更新被拒（400）：目标用户中存在未绑定 TOTP 且未开启
+        passkey-2FA 的用户。users 为未绑定用户名单（web 弹窗展示）。
+      required: [statusCode, error, message, users]
+      properties:
+        statusCode:
+          type: integer
+          enum: [400]
+        error:
+          type: string
+          enum: [Bad Request]
+        message:
+          type: string
+          description: "固定文案 MFA enforcement blocked: users without 2FA found"
+        users:
+          type: array
+          description: 未绑定 2FA 的用户名单
+          items:
+            type: object
+            required: [guid, username, display_name, user_group_name]
+            properties:
+              guid:
+                type: string
+              username:
+                type: string
+              display_name:
+                type: string
+              user_group_name:
+                type: string
+                description: 所属用户组名（未分组为空串；仅 group 命中时标注来源组）
 
     Error:
       type: object

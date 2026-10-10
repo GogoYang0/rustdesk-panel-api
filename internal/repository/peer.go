@@ -50,6 +50,7 @@ type PeerFilter struct {
 // 精确；device_name/device_username LIKE sysinfos 列；group_name LIKE 组名。
 type DeviceFilter struct {
 	ID              string    // 精确 peers.id
+	Guid            string    // 精确 peers.uuid（设备详情定位）
 	Status          *int      // peers.status（0|1）
 	IsOnline        *bool     // lastHeartbeat 与 now-OnlineWindow 比较
 	DeviceName      string    // LIKE sysinfos.hostname
@@ -391,6 +392,9 @@ func applyDeviceFilter(f DeviceFilter) func(*gorm.DB) *gorm.DB {
 	return func(q *gorm.DB) *gorm.DB {
 		if f.ID != "" {
 			q = q.Where("p.id = ?", f.ID)
+		}
+		if f.Guid != "" {
+			q = q.Where("p.uuid = ?", f.Guid)
 		}
 		if f.Status != nil {
 			q = q.Where("p.status = ?", *f.Status)
