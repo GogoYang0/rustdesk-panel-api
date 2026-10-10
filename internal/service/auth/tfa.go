@@ -23,11 +23,19 @@ type TfaService struct {
 	users    *repository.UserRepo
 	sessions *repository.LoginSessionRepo
 	tokens   *TokenService
+	// audits 登录审计记录器（GAP2 G3；nil 时跳过）。
+	audits *LoginAuditRecorder
 }
 
 // NewTfaService 构建服务。
 func NewTfaService(users *repository.UserRepo, sessions *repository.LoginSessionRepo, tokens *TokenService) *TfaService {
 	return &TfaService{users: users, sessions: sessions, tokens: tokens}
+}
+
+// WithAuditRecorder 注入登录审计记录器（bootstrap 装配；GAP2）。
+func (s *TfaService) WithAuditRecorder(audits *LoginAuditRecorder) *TfaService {
+	s.audits = audits
+	return s
 }
 
 // Setup 生成 TOTP 密钥：pending secret 存 users.info.other.tfa_pending_secret
@@ -113,7 +121,7 @@ func (s *TfaService) BeginTfaLogin(ctx context.Context, user *entity.User) (*api
 	tfaType := api.TfaCheck
 	payload := dto.BuildUserPayload(user)
 	return &api.LoginResponse{
-		Type:    api.LoginResponseTypeEmailCheck,
+		Type:    api.EmailCheck,
 		TfaType: &tfaType,
 		Secret:  &secret,
 		User:    &payload,
@@ -158,10 +166,13 @@ func (s *TfaService) completeStep(ctx context.Context, secret, code, method stri
 	switch method {
 	case sessionMethodTfa:
 		if !totp.Validate(code, user.TfaSecret) {
+			// GAP2 G3：tfa_failed 审计（best-effort）。
+			s.recordLoginAudit(ctx, entity.LoginAuditResultTfaFailed, method, user, auditReasonTfaCodeInvalid)
 			return nil, Unauthorized(msgTfaCodeInvalid)
 		}
 	case sessionMethodEmail:
 		if subtle.ConstantTimeCompare([]byte(code), []byte(sess.Code)) != 1 {
+			s.recordLoginAudit(ctx, entity.LoginAuditResultTfaFailed, method, user, auditReasonTfaCodeInvalid)
 			return nil, Unauthorized(msgTfaCodeInvalid)
 		}
 	}
@@ -171,6 +182,7 @@ func (s *TfaService) completeStep(ctx context.Context, secret, code, method stri
 		return nil, Unauthorized(msgBadCredentials)
 	}
 	if user.Status != 1 {
+		s.recordLoginAudit(ctx, entity.LoginAuditResultFailed, method, user, auditReasonUserDisabled)
 		return nil, Unauthorized(msgUserDisabled)
 	}
 	if err := s.sessions.MarkUsed(ctx, sess.Guid); err != nil {
@@ -180,12 +192,22 @@ func (s *TfaService) completeStep(ctx context.Context, secret, code, method stri
 	if err != nil {
 		return nil, err
 	}
+	// GAP2 G3：两步验证完成 → success 审计（method=tfa_code/email_code）。
+	s.recordLoginAudit(ctx, entity.LoginAuditResultSuccess, method, user, "")
 	payload := dto.BuildUserPayload(user)
 	return &api.LoginResponse{
 		AccessToken: &token,
-		Type:        api.LoginResponseTypeAccessToken,
+		Type:        api.AccessToken,
 		User:        &payload,
 	}, nil
+}
+
+// recordLoginAudit 两步验证路径的 best-effort 审计（GAP2 G3）。
+func (s *TfaService) recordLoginAudit(ctx context.Context, result, method string, user *entity.User, reason string) {
+	s.audits.Record(ctx, LoginAuditEntry{
+		UserGuid: strPtr(user.Guid), Username: user.Username,
+		Result: result, Method: method, Reason: reason,
+	})
 }
 
 // createStepSession 建两步验证会话：同用户同方法先 DeleteExisting（单活跃），

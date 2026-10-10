@@ -8,21 +8,27 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/api"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/dto"
+	"github.com/rustdesk-panel/rustdesk-panel-api/internal/entity"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/repository"
 	authsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/auth"
 )
 
 // ProfileService 当前用户资料：PATCH users/me 与改密。
 type ProfileService struct {
-	users *repository.UserRepo
+	db       *gorm.DB
+	users    *repository.UserRepo
+	tokens   *repository.UserTokenRepo
+	sessions *repository.LoginSessionRepo
 }
 
-// NewProfileService 构建服务。
-func NewProfileService(users *repository.UserRepo) *ProfileService {
-	return &ProfileService{users: users}
+// NewProfileService 构建服务。db 用于改密事务；tokens/sessions 语义由
+// revokeActiveTokensTx 承担（保留字段供其他自助端点扩展）。
+func NewProfileService(db *gorm.DB, users *repository.UserRepo, tokens *repository.UserTokenRepo, sessions *repository.LoginSessionRepo) *ProfileService {
+	return &ProfileService{db: db, users: users, tokens: tokens, sessions: sessions}
 }
 
 // UpdateMe 更新 display_name / email / note（nil 字段不更新）。
@@ -70,6 +76,9 @@ func (s *ProfileService) UpdateMe(ctx context.Context, guid string, req dto.Upda
 }
 
 // ChangePassword 修改密码：bcrypt 复核旧密码；新密码至少 6 位。
+// 改密与撤销在**同一 DB 事务**内执行（MIN-04）：user_tokens 全量置
+// isRevoked + 清理未使用的两步登录中间态，撤销失败整体回滚，强制所有
+// 端重新登录。
 func (s *ProfileService) ChangePassword(ctx context.Context, guid string, req dto.ChangePasswordRequest) (api.MessageResponse, error) {
 	if req.CurrentPassword == "" || req.NewPassword == "" {
 		return api.MessageResponse{}, authsvc.BadRequest("Current and new password are required")
@@ -91,10 +100,26 @@ func (s *ProfileService) ChangePassword(ctx context.Context, guid string, req dt
 	if err != nil {
 		return api.MessageResponse{}, err
 	}
-	if err := s.users.UpdateColumns(ctx, guid, map[string]any{
-		"password":  string(hash),
-		"updatedAt": time.Now(),
+	// MIN-04：改密与撤销合并同一 DB 事务——user_tokens 撤销或
+	// login_sessions 清理任一失败，密码更新一并回滚，杜绝
+	// "密码已改而旧会话仍有效"的漏撤销窗口。
+	now := time.Now()
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&entity.User{}).
+			Where("guid = ?", guid).
+			Updates(map[string]any{"password": string(hash), "updatedAt": now})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return repository.ErrNotFound
+		}
+		// 会话撤销：改密后旧 token 一律失效（含当前请求方），客户端须重新登录。
+		return revokeActiveTokensTx(tx, guid)
 	}); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return api.MessageResponse{}, authsvc.NotFound("User not found")
+		}
 		return api.MessageResponse{}, err
 	}
 	return api.MessageResponse{Message: "Password changed"}, nil

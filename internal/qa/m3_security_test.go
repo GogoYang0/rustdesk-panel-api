@@ -837,8 +837,8 @@ func TestM3SecurityRouteSurfaceCount(t *testing.T) {
 		}
 	}
 
-	if total != 164 {
-		t.Errorf("受保护+公开路由总数 = %d, want 164（设计 §1.3 策略总表）", total)
+	if total != 172 {
+		t.Errorf("受保护+公开路由总数 = %d, want 172（设计 §1.3 策略总表 + GAP2 §2.3/§3）", total)
 	}
 	if counts[policyPublic] == 0 || counts[policyPerm] == 0 || counts[policyAdminGuard] == 0 {
 		t.Errorf("档位分布异常（应各档非零）: %v", counts)
@@ -880,6 +880,9 @@ func TestM3SecurityPublicSurfaceClosed(t *testing.T) {
 		"GET /api/settings/frontend":  true,
 		"GET /":                       true,
 		"GET /files/{path}":           true,
+		// GAP2 强制 MFA 绑定（公开凭 mfa_enroll 步会话 secret；设计 §3.2）。
+		"POST /api/auth/mfa/enroll":        true,
+		"POST /api/auth/mfa/enroll/verify": true,
 	}
 
 	actualPublic := map[string]bool{}

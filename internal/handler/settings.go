@@ -20,12 +20,14 @@ type SettingsHandler struct {
 	smtp     *settingssvc.SmtpService
 	ldap     *settingssvc.LdapService
 	frontend *settingssvc.FrontendService
+	mfa      *settingssvc.MfaService
 }
 
-// NewSettingsHandler 构建 handler。
+// NewSettingsHandler 构建 handler（mfa 为 GAP2 强制 MFA 策略服务）。
 func NewSettingsHandler(general *settingssvc.GeneralService, smtp *settingssvc.SmtpService,
-	ldap *settingssvc.LdapService, frontend *settingssvc.FrontendService) *SettingsHandler {
-	return &SettingsHandler{general: general, smtp: smtp, ldap: ldap, frontend: frontend}
+	ldap *settingssvc.LdapService, frontend *settingssvc.FrontendService,
+	mfa *settingssvc.MfaService) *SettingsHandler {
+	return &SettingsHandler{general: general, smtp: smtp, ldap: ldap, frontend: frontend, mfa: mfa}
 }
 
 // writeSettingsError 统一错误出口（业务 StatusError）。
@@ -152,6 +154,31 @@ func (h *SettingsHandler) LdapTest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	view, err := h.ldap.Test(r.Context(), req)
+	if err != nil {
+		writeSettingsError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, view)
+}
+
+// MfaGet GET /api/settings/mfa（AdminGuard；GAP2 G4）。
+func (h *SettingsHandler) MfaGet(w http.ResponseWriter, r *http.Request) {
+	view, err := h.mfa.Get(r.Context())
+	if err != nil {
+		writeSettingsError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, view)
+}
+
+// MfaPut PUT /api/settings/mfa（AdminGuard；GAP2 G4）：enforceGlobal
+// 必填，userGroupGuids 可选（nil 不更新）。
+func (h *SettingsHandler) MfaPut(w http.ResponseWriter, r *http.Request) {
+	req, ok := httpx.DecodeJSON[dto.UpdateMfaSettings](w, r)
+	if !ok {
+		return
+	}
+	view, err := h.mfa.Update(r.Context(), *req)
 	if err != nil {
 		writeSettingsError(w, err)
 		return

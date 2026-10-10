@@ -41,8 +41,8 @@ func TestContractPermissionsCatalog(t *testing.T) {
 	if !ok {
 		t.Fatalf("data missing: %v", m)
 	}
-	if len(rows) != 36 {
-		t.Fatalf("catalog size = %d, want 36（33 可分配 + 3 system_only）", len(rows))
+	if len(rows) != 37 {
+		t.Fatalf("catalog size = %d, want 37（34 可分配 + 3 system_only）", len(rows))
 	}
 	first := rows[0].(map[string]any)
 	if first["code"] != "users.view" {
@@ -88,12 +88,12 @@ func TestContractPermissionsMe(t *testing.T) {
 	raw := cs.get(t, "/api/permissions/me", bearer(m2Token(t, as, seed.Admin)), 200)
 	m := decodeMap(t, raw)
 	perms := m["permissions"].([]any)
-	if len(perms) != 33 {
-		t.Errorf("admin permissions = %d, want 33（排除 system_only）", len(perms))
+	if len(perms) != 34 {
+		t.Errorf("admin permissions = %d, want 34（排除 system_only）", len(perms))
 	}
 	scopes := m["scopes"].(map[string]any)
-	if g := scopes["global"].([]any); len(g) != 33 {
-		t.Errorf("admin scopes.global = %d, want 33", len(g))
+	if g := scopes["global"].([]any); len(g) != 34 {
+		t.Errorf("admin scopes.global = %d, want 34", len(g))
 	}
 	if dg, ok := scopes["device_group"].(map[string]any); !ok || len(dg) != 0 {
 		t.Errorf("admin scopes.device_group = %v, want {}", scopes["device_group"])

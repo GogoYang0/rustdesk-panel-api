@@ -15,14 +15,16 @@ import (
 
 // DeviceHandler 设备域端点。
 type DeviceHandler struct {
-	authz *rbac.AuthorizationService
-	query *devicesvc.QueryService
-	admin *devicesvc.AdminService
+	authz  *rbac.AuthorizationService
+	query  *devicesvc.QueryService
+	admin  *devicesvc.AdminService
+	assign *devicesvc.AssignService
 }
 
-// NewDeviceHandler 构建 handler。
-func NewDeviceHandler(authz *rbac.AuthorizationService, query *devicesvc.QueryService, admin *devicesvc.AdminService) *DeviceHandler {
-	return &DeviceHandler{authz: authz, query: query, admin: admin}
+// NewDeviceHandler 构建 handler（assign 归属域服务，GAP2）。
+func NewDeviceHandler(authz *rbac.AuthorizationService, query *devicesvc.QueryService,
+	admin *devicesvc.AdminService, assign *devicesvc.AssignService) *DeviceHandler {
+	return &DeviceHandler{authz: authz, query: query, admin: admin, assign: assign}
 }
 
 // ListPeers GET /api/peers：Auth 路由无 RBAC 中间件，被禁用户 401
@@ -112,4 +114,29 @@ func (h *DeviceHandler) Disconnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, res)
+}
+
+// AssignDevice PATCH /api/devices/{guid}/assign（Perm(devices.assign)；
+// GAP2 设计 §2.3 #1）。body 可省略（等价解绑）；userGuid 空 = 解绑
+// （置 NULL），非空 = 分配/转移（目标用户必须存在）。
+func (h *DeviceHandler) AssignDevice(w http.ResponseWriter, r *http.Request) {
+	var req *dto.DeviceAssignRequest
+	if r.Body != nil && r.ContentLength != 0 {
+		body, ok := httpx.DecodeJSON[dto.DeviceAssignRequest](w, r)
+		if !ok {
+			return
+		}
+		req = body
+	}
+	ident := middleware.IdentityFromContext(r.Context())
+	var userGuid *string
+	if req != nil {
+		userGuid = req.UserGuid
+	}
+	view, err := h.assign.Assign(r.Context(), ident.UserGuid, r.PathValue("guid"), userGuid)
+	if err != nil {
+		rbac.WriteStatusError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, view)
 }

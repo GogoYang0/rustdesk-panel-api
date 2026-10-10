@@ -130,6 +130,13 @@ func TestChangePasswordFlow(t *testing.T) {
 		t.Fatalf("change password = %d %s", status, raw)
 	}
 
+	// ★ 改密成功后旧 token 全部失效（user_tokens 撤销 → 401 强制重新登录）。
+	status, _, _ = doJSON(t, ts.TS.Client(), http.MethodPost, ts.TS.URL+"/api/currentUser",
+		map[string]any{}, authHeader(token))
+	if status != 401 {
+		t.Errorf("old token after password change status = %d, want 401", status)
+	}
+
 	// 旧密码登录失败；新密码登录成功。
 	status, _, _ = doJSON(t, ts.TS.Client(), http.MethodPost, ts.TS.URL+"/api/login",
 		map[string]any{"username": "databk", "password": "databk"}, nil)
@@ -140,6 +147,56 @@ func TestChangePasswordFlow(t *testing.T) {
 		map[string]any{"username": "databk", "password": "brand-new-pw"}, nil)
 	if status != 200 {
 		t.Errorf("new password login status = %d: %s", status, raw)
+	}
+}
+
+// TestChangePasswordAtomicRollback MIN-04 回归：撤销失败时改密整体回滚。
+// 以 sqlite 触发器注入 user_tokens UPDATE 失败，断言改密返回 500 且
+// 旧密码仍可登录（密码未提交、旧 token 未动）；解除故障后重试成功，
+// 成功路径行为不变（旧 token 全量撤销 → 401 强制重登）。
+func TestChangePasswordAtomicRollback(t *testing.T) {
+	ts := newAuthServerNoLimit(t)
+	token := mustLogin(t, ts.TS, "databk", "databk")
+
+	// 注入撤销失败：user_tokens 任意 UPDATE 即 RAISE(ABORT)。
+	if err := ts.DB.Exec(`CREATE TRIGGER qa_fail_revoke BEFORE UPDATE ON user_tokens
+BEGIN SELECT RAISE(ABORT, 'qa forced revoke failure'); END;`).Error; err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	// 撤销半边失败 → 同事务整体回滚 → 500。
+	status, _, raw := doJSON(t, ts.TS.Client(), http.MethodPatch, ts.TS.URL+"/api/users/me/password",
+		map[string]any{"current_password": "databk", "new_password": "brand-new-pw"}, authHeader(token))
+	if status != 500 {
+		t.Fatalf("change password with forced revoke failure = %d: %s", status, raw)
+	}
+
+	// 回滚验证①：旧密码仍可登录（密码未提交）。
+	status, _, _ = doJSON(t, ts.TS.Client(), http.MethodPost, ts.TS.URL+"/api/login",
+		map[string]any{"username": "databk", "password": "databk"}, nil)
+	if status != 200 {
+		t.Errorf("old password login after rollback = %d, want 200", status)
+	}
+	// 回滚验证②：旧 token 仍有效（未发生漏撤销后的错误状态）。
+	status, _, _ = doJSON(t, ts.TS.Client(), http.MethodPost, ts.TS.URL+"/api/currentUser",
+		map[string]any{}, authHeader(token))
+	if status != 200 {
+		t.Errorf("old token after rollback = %d, want 200", status)
+	}
+
+	// 解除故障后重试：200，且旧 token 撤销生效（成功路径不变）。
+	if err := ts.DB.Exec("DROP TRIGGER qa_fail_revoke").Error; err != nil {
+		t.Fatal(err)
+	}
+	status, parsed, raw := doJSON(t, ts.TS.Client(), http.MethodPatch, ts.TS.URL+"/api/users/me/password",
+		map[string]any{"current_password": "databk", "new_password": "brand-new-pw"}, authHeader(token))
+	if status != 200 || parsed["message"] != "Password changed" {
+		t.Fatalf("retry change password = %d %s", status, raw)
+	}
+	status, _, _ = doJSON(t, ts.TS.Client(), http.MethodPost, ts.TS.URL+"/api/currentUser",
+		map[string]any{}, authHeader(token))
+	if status != 401 {
+		t.Errorf("old token after password change = %d, want 401", status)
 	}
 }
 

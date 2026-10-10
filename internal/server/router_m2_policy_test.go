@@ -29,7 +29,7 @@ import (
 // 164 个 operation（M2 收口 68 + M3 T01 骨架 96；M3 设计 §1.3 策略
 // 总表逐行勾稽，其中 settings 域设计合计栏"6"为笔误、实为 9——
 // 本常量以逐行清单为准）。
-const expectedOperations = 164
+const expectedOperations = 172
 
 // m2SecuredOpenapiOperations openapi.yaml 中声明了 security 块的 operation
 // 集合（契约现状约定）：仅 M1 认证域的 16 个 JWT 端点标注
@@ -54,6 +54,8 @@ var m2SecuredOpenapiOperations = []string{
 	http.MethodPatch + " /api/users/me/password",
 	http.MethodPost + " /api/users/me/avatar",
 	http.MethodDelete + " /api/users/me/avatar",
+	// GAP2：/api/users/me/devices 沿 M1 user 域惯例标注 security（auth 档）。
+	http.MethodGet + " /api/users/me/devices",
 }
 
 // routeTable 设计档位期望表：键 "METHOD pattern" → 授权声明。
@@ -81,6 +83,9 @@ func expectedRouteTable() routeTable {
 	// —— 认证域（§2.1 #1~#19）：公开白名单 7 条，其余仅 JWT ——
 	tb.add(http.MethodPost, "/api/login", server.PolicyPublic, "")
 	tb.add(http.MethodGet, "/api/login-options", server.PolicyPublic, "")
+	// —— GAP2 强制 MFA 绑定（公开凭步会话 secret；GAP2 设计 §3.2）——
+	tb.add(http.MethodPost, "/api/auth/mfa/enroll", server.PolicyPublic, "")
+	tb.add(http.MethodPost, "/api/auth/mfa/enroll/verify", server.PolicyPublic, "")
 	tb.add(http.MethodPost, "/api/passkey/auth/begin", server.PolicyPublic, "")
 	tb.add(http.MethodPost, "/api/passkey/auth/verify", server.PolicyPublic, "")
 	tb.add(http.MethodPost, "/api/oidc/auth", server.PolicyPublic, "")
@@ -104,6 +109,8 @@ func expectedRouteTable() routeTable {
 	tb.add(http.MethodPatch, "/api/users/me/password", server.PolicyAuth, "")
 	tb.add(http.MethodPost, "/api/users/me/avatar", server.PolicyAuth, "")
 	tb.add(http.MethodDelete, "/api/users/me/avatar", server.PolicyAuth, "")
+	// —— GAP2 我的设备（auth 档；GAP2 设计 §2.3 #2）——
+	tb.add(http.MethodGet, "/api/users/me/devices", server.PolicyAuth, "")
 	tb.add(http.MethodGet, "/api/avatars/{filename}", server.PolicyPublic, "")
 
 	// —— 设备端协议（§1.4）：公开 + 设备维度限流，无权限码 ——
@@ -116,6 +123,8 @@ func expectedRouteTable() routeTable {
 	tb.add(http.MethodGet, "/api/devices", server.PolicyPerm, "devices.view")
 	tb.add(http.MethodPatch, "/api/devices/status", server.PolicyPerm, "devices.status")
 	tb.add(http.MethodPatch, "/api/devices/{guid}", server.PolicyPerm, "devices.edit")
+	// —— GAP2 设备个人归属（GAP2 设计 §2.3）：assign 新码 device_group 档 ——
+	tb.add(http.MethodPatch, "/api/devices/{guid}/assign", server.PolicyPerm, "devices.assign")
 	tb.add(http.MethodDelete, "/api/devices/{guid}", server.PolicyPerm, "devices.delete")
 	tb.add(http.MethodPost, "/api/devices/{uuid}/disconnect", server.PolicyPerm, "devices.disconnect")
 
@@ -184,6 +193,8 @@ func expectedRouteTable() routeTable {
 	tb.add(http.MethodDelete, "/api/users/{guid}", server.PolicyPerm, "users.delete")
 	tb.add(http.MethodPatch, "/api/users/{guid}/security", server.PolicyPerm, "users.security")
 	tb.add(http.MethodDelete, "/api/users/{guid}/sessions", server.PolicyPerm, "users.force_logout")
+	// —— GAP2 按用户反查设备（users.view 只读，OQ-8）——
+	tb.add(http.MethodGet, "/api/users/{guid}/devices", server.PolicyPerm, "users.view")
 	tb.add(http.MethodGet, "/api/admin/users", server.PolicyPerm, "users.view")
 
 	// —— M3 通讯录域（设计 §1.3 ab 档）：24 端点仅 Auth（owner/规则
@@ -235,6 +246,8 @@ func expectedRouteTable() routeTable {
 	tb.add(http.MethodGet, "/api/audits/file", server.PolicyPerm, "audit.view")
 	tb.add(http.MethodGet, "/api/audits/alarm", server.PolicyPerm, "audit.view")
 	tb.add(http.MethodGet, "/api/audits/console", server.PolicyPerm, "audit.view")
+	// —— GAP2 登录审计查询（audit.view；新表 login_audits）——
+	tb.add(http.MethodGet, "/api/audits/login", server.PolicyPerm, "audit.view")
 
 	// —— M3 仪表盘域：双端点 SuperAdmin ——
 	tb.add(http.MethodGet, "/api/dashboard", server.PolicySuperAdmin, "")
@@ -274,6 +287,9 @@ func expectedRouteTable() routeTable {
 	tb.add(http.MethodPost, "/api/settings/smtp/test", server.PolicyAdminGuard, "")
 	tb.add(http.MethodGet, "/api/settings/ldap", server.PolicyAdminGuard, "")
 	tb.add(http.MethodPut, "/api/settings/ldap", server.PolicyAdminGuard, "")
+	// —— GAP2 强制 MFA 策略（AdminGuard；GAP2 G4/OQ-5）——
+	tb.add(http.MethodGet, "/api/settings/mfa", server.PolicyAdminGuard, "")
+	tb.add(http.MethodPut, "/api/settings/mfa", server.PolicyAdminGuard, "")
 	tb.add(http.MethodPost, "/api/settings/ldap/test", server.PolicyAdminGuard, "")
 
 	// —— M3 OIDC 提供者域：全 AdminGuard ——

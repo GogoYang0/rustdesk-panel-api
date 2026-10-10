@@ -8,13 +8,15 @@ info:
     设备/设备组、策略、RBAC、用户组）；M3 交付 96 个 operation
     （用户域 CRUD/邀请/批量/安全 14、通讯录 32、审计 9、仪表盘 2、
     服务器管理 10、nexus 9、设置 9、OIDC 提供者 8、更新检查 1、
-    静态资源 2），总计 164 个 operation。
+    静态资源 2）；GAP2 增量交付 8 个 operation（设备个人归属
+    assign / me-devices / user-devices 3、强制 MFA 绑定 enroll ×2、
+    MFA 策略设置 GET/PUT 2、登录审计查询 1），总计 172 个 operation。
     错误响应统一 NestJS 包络 {statusCode, message, error}，
     message 三种形态并存（业务对象 / 纯文本 / 校验字符串数组）；
     POST 成功一律 200。限流 per-IP per-route（超限 429 ThrottlerException）；
     设备端协议为设备维度限流（tracker=id→uuid→IP）。
     契约基准：参考项目主分支实测（附录 A/B），仅取契约、不搬实现。
-  version: 1.1.0-m2
+  version: 1.2.0
 servers:
   - url: http://localhost:8080
 tags:
@@ -97,6 +99,74 @@ paths:
                 $ref: "#/components/schemas/Error"
         "429":
           description: 限流
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/mfa/enroll:
+    post:
+      summary: 强制 MFA 绑定·生成 TOTP（公开；凭 mfa_enroll 步会话 secret）
+      description: >-
+        登录返回 type=mfa_enroll 后调用（用户此时无 access_token，GAP2 设计
+        §3.2）。凭 10 分钟步会话 secret 生成 TOTP key：pending secret 存
+        login_sessions.code 列（users.info 不动，状态随会话单次存活），
+        返回 pending secret 与 otpauth URL（前端渲染二维码）。步会话单次
+        使用，重新调用覆盖旧 pending。
+      operationId: beginMfaEnroll
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaEnrollRequest"
+      responses:
+        "200":
+          description: TOTP 绑定材料
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MfaEnrollResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: 步会话无效或已过期
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/mfa/enroll/verify:
+    post:
+      summary: 强制 MFA 绑定·校验并签发（公开；凭步会话 secret + tfaCode）
+      description: >-
+        验码通过：users.tfaSecret 落 pending 值 + 步会话 MarkUsed + 签发
+        access_token（completeLogin 收敛）；失败 401 固定文案并记登录审计
+        （result=tfa_failed）。步会话单次使用。
+      operationId: verifyMfaEnroll
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaEnrollVerifyRequest"
+      responses:
+        "200":
+          description: 绑定完成并签发登录响应
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: 步会话无效或验证码错误
           content:
             application/json:
               schema:
@@ -725,6 +795,32 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/users/me/devices:
+    get:
+      summary: 我的设备列表（auth 档：登录即用，不设权限码）
+      description: >-
+        仅 peers.userGuid = 当前用户（GAP2 设计 §2.3 #2）；行形状为精简
+        MyDeviceView（不含 strategyGuid/username 等管理字段，OQ-4）。
+      operationId: listMyDevices
+      tags: [user]
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CurrentParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: 我的设备分页
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyDevicePage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/avatars/{filename}:
     get:
       summary: "静态头像（仅 ^[a-f0-9-]+\\.webp$，Cache-Control: public, max-age=86400）"
@@ -1063,6 +1159,48 @@ paths:
             application/json:
               schema:
                 type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/devices/{guid}/assign:
+    patch:
+      summary: 分配/解绑设备个人归属（devices.assign；guid = peer.uuid）
+      description: >-
+        单属主模型（GAP2 G5）：写入 peers.userGuid。userGuid 空/缺省 =
+        解绑（置 NULL）；重复 assign = 转移（before/after 在 console_audits
+        留痕，action=device.assign/device.unassign）。目标用户不存在
+        400 User not found；设备越出操作者授权设备组并集 403 Device is
+        not in an authorized device group。旧 PATCH /api/devices/{guid}
+        的 userName 路径保留不动（超管档），本端点为推荐写入口。
+      operationId: assignDevice
+      tags: [device]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceAssignRequest"
+      responses:
+        "200":
+          description: 分配后的设备视图
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -2608,6 +2746,38 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/users/{guid}/devices:
+    get:
+      summary: 按用户查设备（users.view 只读反查；OQ-8）
+      description: >-
+        管理端「按用户查设备」：仅 peers.userGuid = 目标用户（GAP2 设计
+        §2.3 #3）；目标用户不存在 404；行形状复用 DeviceView 分页。
+      operationId: listUserDevices
+      tags: [user]
+      parameters:
+        - name: guid
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/CurrentParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: 用户名下设备分页
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DevicePage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/admin/users:
     get:
       summary: 管理员用户查询（users.view）
@@ -3850,6 +4020,57 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/audits/login:
+    get:
+      summary: 登录审计查询（audit.view；GAP2 新表 login_audits 查询端）
+      description: >-
+        过滤 result（六枚举：success/failed/tfa_required/tfa_failed/
+        mfa_enroll_required/mfa_enroll_completed）/username（LIKE）/
+        start/end（createdAt 闭区间）；分页。username/displayName 由
+        users LEFT JOIN 补齐展示名。
+      operationId: listLoginAudits
+      tags: [audit]
+      parameters:
+        - $ref: "#/components/parameters/CurrentParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - name: result
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [success, failed, tfa_required, tfa_failed, mfa_enroll_required, mfa_enroll_completed]
+        - name: username
+          in: query
+          required: false
+          description: LIKE 匹配（登录尝试输入原文锚点）
+          schema:
+            type: string
+        - name: start
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: end
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: 登录审计分页
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginAuditPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/dashboard:
     get:
       summary: 仪表盘总览（super administrator）
@@ -4556,6 +4777,54 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/settings/mfa:
+    get:
+      summary: 强制 MFA 策略读取（AdminGuard）
+      description: >-
+        键 mfa.enforceGlobal / mfa.enforceUserGroupGuids（category=mfa，
+        GAP2 G4）；策略缺省双关（不强制）。
+      operationId: getMfaSettings
+      tags: [settings]
+      responses:
+        "200":
+          description: MFA 强制策略
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MfaSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      summary: 强制 MFA 策略更新（AdminGuard）
+      description: enforceGlobal 必填；userGroupGuids 换行列表存储。
+      operationId: updateMfaSettings
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMfaSettings"
+      responses:
+        "200":
+          description: 更新后策略
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MfaSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/settings/smtp:
     get:
       summary: SMTP 配置读取（AdminGuard）
@@ -5116,7 +5385,10 @@ components:
           type: string
           # account 为弃用的历史值（v0.1.0 及更早版本成功登录返回该值），
           # 仅供过渡期兼容旧客户端识别，新实现一律返回 access_token。
-          enum: [access_token, account, email_check]
+          # mfa_enroll：强制 MFA 策略命中且无任何 2FA（GAP2 G1）——
+          # 须先走 POST /api/auth/mfa/enroll 绑定流程；该分支不返回
+          # access_token，官方客户端视为未完成登录（预期兼容行为）。
+          enum: [access_token, account, email_check, mfa_enroll]
         access_token:
           type: string
         user:
@@ -5126,8 +5398,44 @@ components:
           enum: [tfa_check, passkey_check]
         secret:
           type: string
+          description: 分支承载：email_check/passkey_tfa 为步会话 guid；
+            mfa_enroll 分支为 10 分钟绑定步会话 guid（GAP2 G2）。
         passkey_options:
           type: object
+
+    MfaEnrollRequest:
+      type: object
+      description: 强制 MFA 绑定第一步载荷（登录响应 type=mfa_enroll 的
+        secret 即步会话 guid）。
+      required: [secret]
+      properties:
+        secret:
+          type: string
+
+    MfaEnrollResult:
+      type: object
+      description: TOTP 绑定材料（pending secret 存步会话 code 列，
+        users.info 不动——GAP2 G2）。
+      required: [secret, otpauthUrl]
+      properties:
+        secret:
+          type: string
+          description: pending TOTP secret（base32）
+        otpauthUrl:
+          type: string
+          description: otpauth:// 迁移 URL（前端渲染二维码）
+
+    MfaEnrollVerifyRequest:
+      type: object
+      description: 强制 MFA 绑定第二步载荷（验证通过即签发 access_token）。
+      required: [secret, tfaCode]
+      properties:
+        secret:
+          type: string
+          description: mfa_enroll 步会话 guid
+        tfaCode:
+          type: string
+          description: 6 位 TOTP 验证码
 
     LogoutRequest:
       type: object
@@ -5407,6 +5715,56 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DeviceView"
+        total:
+          type: integer
+
+    DeviceAssignRequest:
+      type: object
+      description: >-
+        设备个人归属分配载荷（GAP2 设计 §2.3 #1）：userGuid 缺省/空 = 解绑
+        （置 NULL）；非空 = 分配/转移（目标用户必须存在）。body 整体可省略
+        （等价解绑）。
+      additionalProperties: false
+      properties:
+        userGuid:
+          type: string
+          nullable: true
+          description: 目标用户 guid（空/缺省 = 解绑）
+
+    MyDeviceView:
+      type: object
+      description: >-
+        我的设备精简视图（GAP2 OQ-4）：仅当前归属用户可见的自身设备，
+        不暴露 strategyGuid/username 等管理面字段。is_online =
+        lastHeartbeat > now-60s。
+      required: [uuid, id, note, status, isOnline]
+      properties:
+        uuid:
+          type: string
+        id:
+          type: string
+        note:
+          type: string
+        status:
+          type: integer
+        isOnline:
+          type: boolean
+        lastHeartbeat:
+          type: string
+          format: date-time
+          nullable: true
+        deviceGroupGuid:
+          type: string
+          nullable: true
+
+    MyDevicePage:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/MyDeviceView"
         total:
           type: integer
 
@@ -7038,6 +7396,61 @@ components:
         total:
           type: integer
 
+    LoginAuditRow:
+      type: object
+      description: >-
+        登录审计行（GAP2 新表 login_audits 查询端，形状对齐表）：userGuid
+        可空（登录尝试不对应既有用户）；displayName 由 users LEFT JOIN
+        补齐（无对应用户为 null）；username 为登录尝试输入原文（审计锚点）。
+      required: [guid, username, result, method, createdAt]
+      properties:
+        guid:
+          type: string
+        userGuid:
+          type: string
+          nullable: true
+        username:
+          type: string
+        displayName:
+          type: string
+          nullable: true
+        result:
+          type: string
+          enum: [success, failed, tfa_required, tfa_failed, mfa_enroll_required, mfa_enroll_completed]
+        method:
+          type: string
+          enum: [password, tfa_code, email_code, passkey, oidc]
+        ip:
+          type: string
+          nullable: true
+        userAgent:
+          type: string
+          nullable: true
+        deviceId:
+          type: string
+          nullable: true
+        deviceUuid:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+          description: 固定文案（如 bad_credentials/tfa_code_invalid）
+        createdAt:
+          type: string
+          format: date-time
+
+    LoginAuditPage:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/LoginAuditRow"
+        total:
+          type: integer
+
     DashboardOverview:
       type: object
       description: >-
@@ -7339,6 +7752,33 @@ components:
           type: boolean
         webauthnRpName:
           type: string
+
+    MfaSettings:
+      type: object
+      description: 强制 MFA 策略视图（GAP2 G4；键 mfa.enforceGlobal /
+        mfa.enforceUserGroupGuids，category=mfa）。
+      required: [enforceGlobal, userGroupGuids]
+      properties:
+        enforceGlobal:
+          type: boolean
+          description: 系统级强制：所有用户登录必须已有 2FA
+        userGroupGuids:
+          type: array
+          items:
+            type: string
+          description: 组级强制：命中用户组的用户登录必须已有 2FA
+
+    UpdateMfaSettings:
+      type: object
+      description: 强制 MFA 策略更新载荷（AdminGuard，OQ-5）。
+      required: [enforceGlobal]
+      properties:
+        enforceGlobal:
+          type: boolean
+        userGroupGuids:
+          type: array
+          items:
+            type: string
 
     SmtpConfig:
       type: object
