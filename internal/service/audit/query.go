@@ -24,6 +24,8 @@ type QueryService struct {
 	alarms  *repository.AlarmAuditRepo
 	console *repository.ConsoleAuditRepo
 	peers   *repository.PeerRepo
+	// logins 登录审计仓储（GAP2 新表查询端；GAP2 设计 §3.4）。
+	logins *repository.LoginAuditRepo
 }
 
 // NewQueryService 构建查询服务。
@@ -34,10 +36,11 @@ func NewQueryService(
 	alarms *repository.AlarmAuditRepo,
 	console *repository.ConsoleAuditRepo,
 	peers *repository.PeerRepo,
+	logins *repository.LoginAuditRepo,
 ) *QueryService {
 	return &QueryService{
 		authz: authz, conns: conns, files: files,
-		alarms: alarms, console: console, peers: peers,
+		alarms: alarms, console: console, peers: peers, logins: logins,
 	}
 }
 
@@ -363,4 +366,44 @@ func optTime(t time.Time) *time.Time {
 		return nil
 	}
 	return &t
+}
+
+// ListLogin 登录审计分页（GET /api/audits/login；GAP2 新表
+// login_audits 查询端）：过滤 result/username(LIKE)/start/end
+// （createdAt 闭区间）+ 分页；displayName 由 users LEFT JOIN 补齐。
+func (s *QueryService) ListLogin(ctx context.Context, p api.ListLoginAuditsParams) (api.LoginAuditPage, error) {
+	current, pageSize := pageParams(p.Current, p.PageSize)
+	rows, total, err := s.logins.ListPaged(ctx, repository.LoginAuditFilter{
+		Result:   derefStr((*string)(p.Result)),
+		Username: derefStr(p.Username),
+		Start:    p.Start,
+		End:      p.End,
+		Current:  current,
+		PageSize: pageSize,
+	})
+	if err != nil {
+		return api.LoginAuditPage{}, err
+	}
+	page := api.LoginAuditPage{
+		Data:  make([]api.LoginAuditRow, 0, len(rows)),
+		Total: int(total),
+	}
+	for i := range rows {
+		row := &rows[i]
+		page.Data = append(page.Data, api.LoginAuditRow{
+			Guid:        row.Guid,
+			UserGuid:    row.UserGuid,
+			Username:    row.Username,
+			DisplayName: row.DisplayName,
+			Result:      api.LoginAuditRowResult(row.Result),
+			Method:      api.LoginAuditRowMethod(row.Method),
+			Ip:          strPtrVal(row.IP),
+			UserAgent:   strPtrVal(row.UserAgent),
+			DeviceId:    strPtrVal(row.DeviceId),
+			DeviceUuid:  strPtrVal(row.DeviceUuid),
+			Reason:      strPtrVal(row.Reason),
+			CreatedAt:   row.CreatedAt,
+		})
+	}
+	return page, nil
 }

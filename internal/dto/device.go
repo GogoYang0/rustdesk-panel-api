@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/rustdesk-panel/rustdesk-panel-api/internal/api"
 )
 
 // PaginationQuery 列表端点共享分页参数（设计 §1.5，边界同 §1.1⑤：
@@ -18,6 +20,12 @@ import (
 type PaginationQuery struct {
 	Current  int
 	PageSize int
+}
+
+// ParsePaginationQuery 从 query 值解析共享分页参数（导出入口，供
+// 仅有分页参数的端点使用，如 GAP2 /api/users/me/devices）。
+func ParsePaginationQuery(q url.Values) PaginationQuery {
+	return paginationQuery(q)
 }
 
 // PageResult 泛型分页包络：恒为 {data, total}（无 extra 字段，共享知识 4）。
@@ -217,6 +225,21 @@ type DisconnectRequest struct {
 type DisconnectResult struct {
 	PendingDisconnectCount int `json:"pending_disconnect_count"`
 }
+
+// ==================== 设备个人归属（GAP2 设计 §2.3） ====================
+
+// MyDeviceView / MyDevicePage / DeviceAssignRequest 类型别名至
+// oapi-codegen 产物（单一契约源，零漂移）。
+//
+//   - MyDeviceView（OQ-4 精简视图）：uuid/id/note/status/isOnline/
+//     lastHeartbeat/deviceGroupGuid，不含管理面字段；
+//   - DeviceAssignRequest：userGuid 缺省/空 = 解绑（置 NULL），
+//     非空 = 分配/转移；body 整体可省略（等价解绑）。
+type (
+	MyDeviceView       = api.MyDeviceView
+	MyDevicePage       = api.MyDevicePage
+	DeviceAssignRequest = api.DeviceAssignRequest
+)
 
 // ==================== 列表查询参数（/peers 与 /devices 语义差异锁定） ====================
 

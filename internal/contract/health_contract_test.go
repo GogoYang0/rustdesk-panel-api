@@ -7,20 +7,21 @@ import (
 )
 
 // TestSpecLoadsAndCounts 验证 spec 可加载、可校验且 path/操作数与
-// 当前里程碑范围一致：M1 25 + M2 43 + M3 96 = 164 操作；130 个 path
-// key（M3 设计 §1.3 策略总表逐行勾稽；设计"总 166/+98"为笔误——
-// §1.3 实列 96 全新 operation，其中 5 个为 M1 已有端点的契约补全）。
+// 当前里程碑范围一致：M1 25 + M2 43 + M3 96 = 164 操作，GAP2 增量 8
+// （assign / me-devices / user-devices / mfa enroll ×2 / settings-mfa
+// GET+PUT / audits/login）= 172 操作；137 个 path key（GAP2 设计
+// §2.3/§3 增 7 条 path）。
 func TestSpecLoadsAndCounts(t *testing.T) {
 	doc := loadSpec(t)
-	if got := doc.Paths.Len(); got != 130 {
-		t.Fatalf("openapi paths = %d, want 130", got)
+	if got := doc.Paths.Len(); got != 137 {
+		t.Fatalf("openapi paths = %d, want 137", got)
 	}
 	ops := 0
 	for _, item := range doc.Paths.Map() {
 		ops += len(item.Operations())
 	}
-	if ops != 164 {
-		t.Fatalf("openapi operations = %d, want 164", ops)
+	if ops != 172 {
+		t.Fatalf("openapi operations = %d, want 172", ops)
 	}
 	for _, p := range []string{
 		"/api/healthz", "/api/login", "/api/login-options", "/api/logout",

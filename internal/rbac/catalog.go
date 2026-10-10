@@ -71,6 +71,7 @@ const (
 	CodeDevicesStatus     = "devices.status"
 	CodeDevicesDelete     = "devices.delete"
 	CodeDevicesDisconnect = "devices.disconnect"
+	CodeDevicesAssign     = "devices.assign"
 
 	CodeAddressBooksView  = "address_books.view"
 	CodeAddressBooksEdit  = "address_books.edit"
@@ -125,6 +126,9 @@ var catalog = []PermissionDefinition{
 	{CodeDevicesStatus, "devices", "status", "Toggle device status", "Enable or disable devices", ScopeDeviceGroup, true, false, []string{CodeDevicesView}},
 	{CodeDevicesDelete, "devices", "delete", "Delete devices", "Delete devices", ScopeDeviceGroup, true, false, []string{CodeDevicesView}},
 	{CodeDevicesDisconnect, "devices", "disconnect", "Disconnect devices", "Disconnect device sessions", ScopeDeviceGroup, true, false, []string{CodeDevicesView}},
+	// devices.assign（GAP2 G6）：分配/转移/解绑设备个人归属；scope 语义 =
+	// 仅可操作授权设备组并集内设备（复用 AssertDeviceAccess），全局档可操作全部。
+	{CodeDevicesAssign, "devices", "assign", "Assign devices", "Assign devices to users", ScopeDeviceGroup, true, false, []string{CodeDevicesView, CodeUsersView}},
 
 	// address_books（requires ⇐ address_books.view）
 	{CodeAddressBooksView, "address_books", "view", "View address books", "View address books", ScopeGlobal, true, false, nil},
@@ -193,7 +197,7 @@ func IsAssignable(code string) bool {
 }
 
 // IsDeviceGroupScoped 报告码是否属于 device_group 档
-// （仅 devices.view/edit/status/delete/disconnect + strategies.assign 六码）。
+// （devices.view/edit/status/delete/disconnect/assign + strategies.assign）。
 func IsDeviceGroupScoped(code string) bool {
 	d, ok := catalogIndex[code]
 	return ok && d.Scope == ScopeDeviceGroup

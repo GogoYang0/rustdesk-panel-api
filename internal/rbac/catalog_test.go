@@ -7,8 +7,8 @@ import "testing"
 // 以清单枚举为准，见交付报告偏差说明）。
 func TestCatalogCount(t *testing.T) {
 	c := Catalog()
-	if len(c) != 36 {
-		t.Fatalf("catalog size = %d, want 36 (33 assignable + 3 system_only)", len(c))
+	if len(c) != 37 {
+		t.Fatalf("catalog size = %d, want 37 (34 assignable + 3 system_only)", len(c))
 	}
 	assignable, systemOnly := 0, 0
 	for _, d := range c {
@@ -19,12 +19,12 @@ func TestCatalogCount(t *testing.T) {
 			assignable++
 		}
 	}
-	if assignable != 33 || systemOnly != 3 {
-		t.Fatalf("assignable = %d, systemOnly = %d, want 33/3", assignable, systemOnly)
+	if assignable != 34 || systemOnly != 3 {
+		t.Fatalf("assignable = %d, systemOnly = %d, want 34/3", assignable, systemOnly)
 	}
 }
 
-// TestCatalogCodes 断言全部 36 个码按清单原样存在（命名 resource.action）。
+// TestCatalogCodes 断言全部 37 个码按清单原样存在（命名 resource.action）。
 func TestCatalogCodes(t *testing.T) {
 	want := []string{
 		"users.view", "users.create", "users.edit", "users.status", "users.delete",
@@ -32,6 +32,7 @@ func TestCatalogCodes(t *testing.T) {
 		"user_groups.view", "user_groups.create", "user_groups.edit",
 		"user_groups.delete", "user_groups.membership",
 		"devices.view", "devices.edit", "devices.status", "devices.delete", "devices.disconnect",
+		"devices.assign",
 		"address_books.view", "address_books.edit", "address_books.share",
 		"strategies.view", "strategies.create", "strategies.edit",
 		"strategies.delete", "strategies.assign",
@@ -60,11 +61,12 @@ func TestCatalogCodes(t *testing.T) {
 	}
 }
 
-// TestCatalogScopes 断言 device_group 档仅 6 码（devices.* + strategies.assign）。
+// TestCatalogScopes 断言 device_group 档仅 7 码（devices.* + strategies.assign；
+// GAP2 增 devices.assign）。
 func TestCatalogScopes(t *testing.T) {
 	deviceGroupScoped := []string{
 		"devices.view", "devices.edit", "devices.status",
-		"devices.delete", "devices.disconnect", "strategies.assign",
+		"devices.delete", "devices.disconnect", "devices.assign", "strategies.assign",
 	}
 	for _, code := range deviceGroupScoped {
 		d, ok := FindDefinition(code)
@@ -106,6 +108,7 @@ func TestCatalogRequires(t *testing.T) {
 		{"devices.status", []string{"devices.view"}},
 		{"devices.delete", []string{"devices.view"}},
 		{"devices.disconnect", []string{"devices.view"}},
+	{"devices.assign", []string{"devices.view", "users.view"}},
 		{"users.create", []string{"users.view"}},
 		{"users.force_logout", []string{"users.view"}},
 		{"user_groups.membership", []string{"user_groups.view"}},

@@ -248,3 +248,31 @@ func auditStrFilter(q url.Values, key string) *string {
 	v := q.Get(key)
 	return &v
 }
+
+// ListLogin GET /api/audits/login（audit.view；GAP2 新表 login_audits
+// 查询端）：result/username/start/end 过滤 + 分页。
+func (h *AuditHandler) ListLogin(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	p := api.ListLoginAuditsParams{}
+	if !parseAuditPage(w, q, &p.Current, &p.PageSize) {
+		return
+	}
+	if v := auditStrFilter(q, "result"); v != nil {
+		p.Result = (*api.ListLoginAuditsParamsResult)(v)
+	}
+	p.Username = auditStrFilter(q, "username")
+	startOK := parseAuditTime(w, q, "start", &p.Start)
+	if !startOK {
+		return
+	}
+	endOK := parseAuditTime(w, q, "end", &p.End)
+	if !endOK {
+		return
+	}
+	res, err := h.query.ListLogin(r.Context(), p)
+	if err != nil {
+		writeAuditError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, res)
+}

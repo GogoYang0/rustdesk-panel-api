@@ -164,3 +164,9 @@ func (s *GeneralService) WebauthnConfig(ctx context.Context, fallbackEnabled boo
 	}
 	return enabled, rpName, nil
 }
+
+// AuditRetentionDays 类型化读取审计保留天数（GAP2 OQ-7：login_audits
+// 纳入统一保留期清理的读取口；库值优先，缺失回退 fallback）。
+func (s *GeneralService) AuditRetentionDays(ctx context.Context, fallback int) (int, error) {
+	return s.store.GetInt(ctx, KeyGeneralAuditRetentionDay, fallback)
+}

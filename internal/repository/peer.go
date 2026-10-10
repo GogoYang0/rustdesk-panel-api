@@ -181,6 +181,15 @@ func (r *PeerRepo) ListAccessiblePeers(ctx context.Context, userGuid string, f P
 	return listPeersPage(base, applyPeerFilter(f), f.Current, f.PageSize)
 }
 
+// ListByUserGuid 按个人归属分页（GAP2 设计 §2.3 #2/#3 数据源）：
+// 仅 peers.userGuid = userGuid（单属主模型 G5），排序/分页与既有
+// 执行器一致（p.id ASC）。/api/users/me/devices 与 /api/users/{guid}/devices
+// 共用；不参与任何授权判定（归属与 device_group scope 正交）。
+func (r *PeerRepo) ListByUserGuid(ctx context.Context, userGuid string, current, pageSize int) ([]entity.Peer, int64, error) {
+	base := r.db.WithContext(ctx).Table("peers p").Where("p.userGuid = ?", userGuid)
+	return listPeersPage(base, func(q *gorm.DB) *gorm.DB { return q }, current, pageSize)
+}
+
 // ListScoped scope 边界分页（/devices）：Global 全量（含未分组设备）；
 // 非 Global 仅授权设备组并集内（未分组设备天然排除，设计 §4.3）。
 // scope 组集为空且非全局时直接返回空页（不产生无效 SQL）。

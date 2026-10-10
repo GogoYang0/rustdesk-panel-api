@@ -95,6 +95,25 @@ const (
 	FileAuditReportTypeN1 FileAuditReportType = 1
 )
 
+// Defines values for LoginAuditRowMethod.
+const (
+	LoginAuditRowMethodEmailCode LoginAuditRowMethod = "email_code"
+	LoginAuditRowMethodOidc      LoginAuditRowMethod = "oidc"
+	LoginAuditRowMethodPasskey   LoginAuditRowMethod = "passkey"
+	LoginAuditRowMethodPassword  LoginAuditRowMethod = "password"
+	LoginAuditRowMethodTfaCode   LoginAuditRowMethod = "tfa_code"
+)
+
+// Defines values for LoginAuditRowResult.
+const (
+	LoginAuditRowResultFailed             LoginAuditRowResult = "failed"
+	LoginAuditRowResultMfaEnrollCompleted LoginAuditRowResult = "mfa_enroll_completed"
+	LoginAuditRowResultMfaEnrollRequired  LoginAuditRowResult = "mfa_enroll_required"
+	LoginAuditRowResultSuccess            LoginAuditRowResult = "success"
+	LoginAuditRowResultTfaFailed          LoginAuditRowResult = "tfa_failed"
+	LoginAuditRowResultTfaRequired        LoginAuditRowResult = "tfa_required"
+)
+
 // Defines values for LoginRequestType.
 const (
 	LoginRequestTypeAccount   LoginRequestType = "account"
@@ -111,18 +130,19 @@ const (
 
 // Defines values for LoginResponseType.
 const (
-	LoginResponseTypeAccessToken LoginResponseType = "access_token"
-	LoginResponseTypeAccount     LoginResponseType = "account"
-	LoginResponseTypeEmailCheck  LoginResponseType = "email_check"
+	AccessToken LoginResponseType = "access_token"
+	Account     LoginResponseType = "account"
+	EmailCheck  LoginResponseType = "email_check"
+	MfaEnroll   LoginResponseType = "mfa_enroll"
 )
 
 // Defines values for NexusBuildViewStatus.
 const (
-	Building  NexusBuildViewStatus = "building"
-	Cancelled NexusBuildViewStatus = "cancelled"
-	Completed NexusBuildViewStatus = "completed"
-	Failed    NexusBuildViewStatus = "failed"
-	Pending   NexusBuildViewStatus = "pending"
+	NexusBuildViewStatusBuilding  NexusBuildViewStatus = "building"
+	NexusBuildViewStatusCancelled NexusBuildViewStatus = "cancelled"
+	NexusBuildViewStatusCompleted NexusBuildViewStatus = "completed"
+	NexusBuildViewStatusFailed    NexusBuildViewStatus = "failed"
+	NexusBuildViewStatusPending   NexusBuildViewStatus = "pending"
 )
 
 // Defines values for NexusGenerateDtoArch.
@@ -198,6 +218,16 @@ const (
 const (
 	ListConsoleAuditsParamsResultAllowed ListConsoleAuditsParamsResult = "allowed"
 	ListConsoleAuditsParamsResultDenied  ListConsoleAuditsParamsResult = "denied"
+)
+
+// Defines values for ListLoginAuditsParamsResult.
+const (
+	Failed             ListLoginAuditsParamsResult = "failed"
+	MfaEnrollCompleted ListLoginAuditsParamsResult = "mfa_enroll_completed"
+	MfaEnrollRequired  ListLoginAuditsParamsResult = "mfa_enroll_required"
+	Success            ListLoginAuditsParamsResult = "success"
+	TfaFailed          ListLoginAuditsParamsResult = "tfa_failed"
+	TfaRequired        ListLoginAuditsParamsResult = "tfa_required"
 )
 
 // Defines values for GetDashboardTrendsParamsRange.
@@ -764,6 +794,12 @@ type DeleteUserGroupResult struct {
 	MovedUserCount int `json:"moved_user_count"`
 }
 
+// DeviceAssignRequest 设备个人归属分配载荷（GAP2 设计 §2.3 #1）：userGuid 缺省/空 = 解绑 （置 NULL）；非空 = 分配/转移（目标用户必须存在）。body 整体可省略 （等价解绑）。
+type DeviceAssignRequest struct {
+	// UserGuid 目标用户 guid（空/缺省 = 解绑）
+	UserGuid *string `json:"userGuid"`
+}
+
 // DeviceGroupPage defines model for DeviceGroupPage.
 type DeviceGroupPage struct {
 	Data  []DeviceGroupView `json:"data"`
@@ -1087,6 +1123,36 @@ type LegacyAbSaveRequest struct {
 	Data string `json:"data"`
 }
 
+// LoginAuditPage defines model for LoginAuditPage.
+type LoginAuditPage struct {
+	Data  []LoginAuditRow `json:"data"`
+	Total int             `json:"total"`
+}
+
+// LoginAuditRow 登录审计行（GAP2 新表 login_audits 查询端，形状对齐表）：userGuid 可空（登录尝试不对应既有用户）；displayName 由 users LEFT JOIN 补齐（无对应用户为 null）；username 为登录尝试输入原文（审计锚点）。
+type LoginAuditRow struct {
+	CreatedAt   time.Time           `json:"createdAt"`
+	DeviceId    *string             `json:"deviceId"`
+	DeviceUuid  *string             `json:"deviceUuid"`
+	DisplayName *string             `json:"displayName"`
+	Guid        string              `json:"guid"`
+	Ip          *string             `json:"ip"`
+	Method      LoginAuditRowMethod `json:"method"`
+
+	// Reason 固定文案（如 bad_credentials/tfa_code_invalid）
+	Reason    *string             `json:"reason"`
+	Result    LoginAuditRowResult `json:"result"`
+	UserAgent *string             `json:"userAgent"`
+	UserGuid  *string             `json:"userGuid"`
+	Username  string              `json:"username"`
+}
+
+// LoginAuditRowMethod defines model for LoginAuditRow.Method.
+type LoginAuditRowMethod string
+
+// LoginAuditRowResult defines model for LoginAuditRow.Result.
+type LoginAuditRowResult string
+
 // LoginRequest type 分支请求；account 需 username/password， tfa_code 需 secret+tfaCode，email_code 需 secret+verificationCode。
 type LoginRequest struct {
 	AutoLogin  *bool       `json:"autoLogin,omitempty"`
@@ -1112,9 +1178,11 @@ type LoginRequestType string
 type LoginResponse struct {
 	AccessToken    *string                 `json:"access_token,omitempty"`
 	PasskeyOptions *map[string]interface{} `json:"passkey_options,omitempty"`
-	Secret         *string                 `json:"secret,omitempty"`
-	TfaType        *LoginResponseTfaType   `json:"tfa_type,omitempty"`
-	Type           LoginResponseType       `json:"type"`
+
+	// Secret 分支承载：email_check/passkey_tfa 为步会话 guid； mfa_enroll 分支为 10 分钟绑定步会话 guid（GAP2 G2）。
+	Secret  *string               `json:"secret,omitempty"`
+	TfaType *LoginResponseTfaType `json:"tfa_type,omitempty"`
+	Type    LoginResponseType     `json:"type"`
 
 	// User 用户响应 payload（snake_case 契约，禁止规范化）。
 	User *UserPayload `json:"user,omitempty"`
@@ -1151,6 +1219,38 @@ type MessageResponse struct {
 	Message string `json:"message"`
 }
 
+// MfaEnrollRequest 强制 MFA 绑定第一步载荷（登录响应 type=mfa_enroll 的 secret 即步会话 guid）。
+type MfaEnrollRequest struct {
+	Secret string `json:"secret"`
+}
+
+// MfaEnrollResult TOTP 绑定材料（pending secret 存步会话 code 列， users.info 不动——GAP2 G2）。
+type MfaEnrollResult struct {
+	// OtpauthUrl otpauth:// 迁移 URL（前端渲染二维码）
+	OtpauthUrl string `json:"otpauthUrl"`
+
+	// Secret pending TOTP secret（base32）
+	Secret string `json:"secret"`
+}
+
+// MfaEnrollVerifyRequest 强制 MFA 绑定第二步载荷（验证通过即签发 access_token）。
+type MfaEnrollVerifyRequest struct {
+	// Secret mfa_enroll 步会话 guid
+	Secret string `json:"secret"`
+
+	// TfaCode 6 位 TOTP 验证码
+	TfaCode string `json:"tfaCode"`
+}
+
+// MfaSettings 强制 MFA 策略视图（GAP2 G4；键 mfa.enforceGlobal / mfa.enforceUserGroupGuids，category=mfa）。
+type MfaSettings struct {
+	// EnforceGlobal 系统级强制：所有用户登录必须已有 2FA
+	EnforceGlobal bool `json:"enforceGlobal"`
+
+	// UserGroupGuids 组级强制：命中用户组的用户登录必须已有 2FA
+	UserGroupGuids []string `json:"userGroupGuids"`
+}
+
 // MoveUsersRequest defines model for MoveUsersRequest.
 type MoveUsersRequest struct {
 	UserGuids []string `json:"user_guids"`
@@ -1159,6 +1259,23 @@ type MoveUsersRequest struct {
 // MoveUsersResult defines model for MoveUsersResult.
 type MoveUsersResult struct {
 	MovedUserCount int `json:"moved_user_count"`
+}
+
+// MyDevicePage defines model for MyDevicePage.
+type MyDevicePage struct {
+	Data  []MyDeviceView `json:"data"`
+	Total int            `json:"total"`
+}
+
+// MyDeviceView 我的设备精简视图（GAP2 OQ-4）：仅当前归属用户可见的自身设备， 不暴露 strategyGuid/username 等管理面字段。is_online = lastHeartbeat > now-60s。
+type MyDeviceView struct {
+	DeviceGroupGuid *string    `json:"deviceGroupGuid"`
+	Id              string     `json:"id"`
+	IsOnline        bool       `json:"isOnline"`
+	LastHeartbeat   *time.Time `json:"lastHeartbeat"`
+	Note            string     `json:"note"`
+	Status          int        `json:"status"`
+	Uuid            string     `json:"uuid"`
 }
 
 // NexusBindStatus nexus 绑定态（nexus_tokens 行）。
@@ -1616,6 +1733,12 @@ type UpdateMeRequest struct {
 	Note        *string              `json:"note,omitempty"`
 }
 
+// UpdateMfaSettings 强制 MFA 策略更新载荷（AdminGuard，OQ-5）。
+type UpdateMfaSettings struct {
+	EnforceGlobal  bool      `json:"enforceGlobal"`
+	UserGroupGuids *[]string `json:"userGroupGuids,omitempty"`
+}
+
 // UpdateSharedBookRequest 共享书更新：改 owner 需 FULL_CONTROL（先给新 owner 授 FULL_CONTROL 规则）； 改 name/note/password 需 READ_WRITE；重名 409。
 type UpdateSharedBookRequest struct {
 	Guid string  `json:"guid"`
@@ -1888,6 +2011,24 @@ type ListFileAuditsParams struct {
 	Type     *int           `form:"type,omitempty" json:"type,omitempty"`
 }
 
+// ListLoginAuditsParams defines parameters for ListLoginAudits.
+type ListLoginAuditsParams struct {
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam               `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	Result   *ListLoginAuditsParamsResult `form:"result,omitempty" json:"result,omitempty"`
+
+	// Username LIKE 匹配（登录尝试输入原文锚点）
+	Username *string    `form:"username,omitempty" json:"username,omitempty"`
+	Start    *time.Time `form:"start,omitempty" json:"start,omitempty"`
+	End      *time.Time `form:"end,omitempty" json:"end,omitempty"`
+}
+
+// ListLoginAuditsParamsResult defines parameters for ListLoginAudits.
+type ListLoginAuditsParamsResult string
+
 // GetDashboardTrendsParams defines parameters for GetDashboardTrends.
 type GetDashboardTrendsParams struct {
 	Range *GetDashboardTrendsParamsRange `form:"range,omitempty" json:"range,omitempty"`
@@ -2155,6 +2296,24 @@ type UploadMyAvatarMultipartBody struct {
 	Avatar openapi_types.File `json:"avatar"`
 }
 
+// ListMyDevicesParams defines parameters for ListMyDevices.
+type ListMyDevicesParams struct {
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// ListUserDevicesParams defines parameters for ListUserDevices.
+type ListUserDevicesParams struct {
+	// Current 页码（1~100000，默认 1；camelCase 契约，禁止规范化）
+	Current *CurrentParam `form:"current,omitempty" json:"current,omitempty"`
+
+	// PageSize 每页条数（1~100，默认 20；camelCase 契约，禁止规范化）
+	PageSize *PageSizeParam `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
 // DisableTfaJSONRequestBody defines body for DisableTfa for application/json ContentType.
 type DisableTfaJSONRequestBody DisableTfaJSONBody
 
@@ -2227,6 +2386,12 @@ type ReportFileAuditJSONRequestBody = FileAuditReport
 // UpdateConnectionAuditNoteJSONRequestBody defines body for UpdateConnectionAuditNote for application/json ContentType.
 type UpdateConnectionAuditNoteJSONRequestBody = ConnNoteUpdate
 
+// BeginMfaEnrollJSONRequestBody defines body for BeginMfaEnroll for application/json ContentType.
+type BeginMfaEnrollJSONRequestBody = MfaEnrollRequest
+
+// VerifyMfaEnrollJSONRequestBody defines body for VerifyMfaEnroll for application/json ContentType.
+type VerifyMfaEnrollJSONRequestBody = MfaEnrollVerifyRequest
+
 // CreateDeviceGroupJSONRequestBody defines body for CreateDeviceGroup for application/json ContentType.
 type CreateDeviceGroupJSONRequestBody = DeviceGroupUpsertRequest
 
@@ -2244,6 +2409,9 @@ type UpdateDeviceStatusJSONRequestBody = DeviceStatusUpdateRequest
 
 // UpdateDeviceJSONRequestBody defines body for UpdateDevice for application/json ContentType.
 type UpdateDeviceJSONRequestBody = UpdateDeviceRequest
+
+// AssignDeviceJSONRequestBody defines body for AssignDevice for application/json ContentType.
+type AssignDeviceJSONRequestBody = DeviceAssignRequest
 
 // DisconnectDeviceJSONRequestBody defines body for DisconnectDevice for application/json ContentType.
 type DisconnectDeviceJSONRequestBody = DisconnectRequest
@@ -2307,6 +2475,9 @@ type UpdateLdapSettingsJSONRequestBody = LdapConfig
 
 // TestLdapSettingsJSONRequestBody defines body for TestLdapSettings for application/json ContentType.
 type TestLdapSettingsJSONRequestBody = LdapConfig
+
+// UpdateMfaSettingsJSONRequestBody defines body for UpdateMfaSettings for application/json ContentType.
+type UpdateMfaSettingsJSONRequestBody = UpdateMfaSettings
 
 // UpdateSmtpSettingsJSONRequestBody defines body for UpdateSmtpSettings for application/json ContentType.
 type UpdateSmtpSettingsJSONRequestBody = SmtpConfig

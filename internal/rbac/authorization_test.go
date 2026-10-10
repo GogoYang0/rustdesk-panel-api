@@ -525,11 +525,11 @@ func TestGetEffectivePermissions(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(eff.Permissions) != 33 {
-			t.Errorf("admin permissions = %d, want 33", len(eff.Permissions))
+		if len(eff.Permissions) != 34 {
+			t.Errorf("admin permissions = %d, want 34", len(eff.Permissions))
 		}
-		if len(eff.Scopes.Global) != 33 {
-			t.Errorf("admin global scope = %d codes, want 33", len(eff.Scopes.Global))
+		if len(eff.Scopes.Global) != 34 {
+			t.Errorf("admin global scope = %d codes, want 34", len(eff.Scopes.Global))
 		}
 	})
 

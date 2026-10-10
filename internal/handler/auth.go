@@ -15,18 +15,20 @@ import (
 	authsvc "github.com/rustdesk-panel/rustdesk-panel-api/internal/service/auth"
 )
 
-// AuthHandler 认证域端点：login/logout/currentUser、2FA、passkey、sessions。
+// AuthHandler 认证域端点：login/logout/currentUser、2FA、passkey、sessions
+// 与 GAP2 强制 MFA 绑定（mfa/enroll ×2）。
 type AuthHandler struct {
 	login   *authsvc.AuthService
 	tfa     *authsvc.TfaService
 	passkey *authsvc.PasskeyService
 	tokens  *authsvc.TokenService
+	mfa     *authsvc.MfaService
 }
 
-// NewAuthHandler 构建 handler。
+// NewAuthHandler 构建 handler（mfa 为 GAP2 强制 MFA 服务）。
 func NewAuthHandler(login *authsvc.AuthService, tfa *authsvc.TfaService,
-	passkey *authsvc.PasskeyService, tokens *authsvc.TokenService) *AuthHandler {
-	return &AuthHandler{login: login, tfa: tfa, passkey: passkey, tokens: tokens}
+	passkey *authsvc.PasskeyService, tokens *authsvc.TokenService, mfa *authsvc.MfaService) *AuthHandler {
+	return &AuthHandler{login: login, tfa: tfa, passkey: passkey, tokens: tokens, mfa: mfa}
 }
 
 // Login POST /api/login（公开，限流 5/min）。
@@ -35,7 +37,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	resp, err := h.login.Login(r.Context(), req)
+	// GAP2 G3：注入登录审计元数据（IP/UA，best-effort 写入用）。
+	resp, err := h.login.Login(authsvc.WithLoginMeta(r.Context(), r), req)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -248,4 +251,42 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		return
 	}
 	httpx.ErrInternal(w)
+}
+
+// MfaEnroll POST /api/auth/mfa/enroll（公开；凭 mfa_enroll 步会话 secret；
+// GAP2 设计 §3.2）。生成 TOTP 绑定材料（pending secret 存步会话 code 列）。
+func (h *AuthHandler) MfaEnroll(w http.ResponseWriter, r *http.Request) {
+	req, ok := httpx.DecodeJSON[api.BeginMfaEnrollJSONRequestBody](w, r)
+	if !ok {
+		return
+	}
+	res, err := h.mfa.BeginEnroll(r.Context(), req.Secret)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, res)
+}
+
+// MfaEnrollVerify POST /api/auth/mfa/enroll/verify（公开；GAP2 设计
+// §3.2）。验码通过：落 users.tfaSecret + MarkUsed + 签发 access_token；
+// 失败 401 固定文案（审计 tfa_failed 由服务层埋点）。
+func (h *AuthHandler) MfaEnrollVerify(w http.ResponseWriter, r *http.Request) {
+	req, ok := httpx.DecodeJSON[api.VerifyMfaEnrollJSONRequestBody](w, r)
+	if !ok {
+		return
+	}
+	if len(req.TfaCode) != 6 {
+		httpx.ErrBadRequest(w, "tfaCode must be 6 characters")
+		return
+	}
+	// GAP2 G3：绑定完成/失败审计同样携带请求元数据。
+	ctx := authsvc.WithLoginMeta(r.Context(), r)
+	dev := dto.DeviceFromRequest("", "", nil)
+	resp, err := h.mfa.VerifyEnroll(ctx, req.Secret, req.TfaCode, dev, nil)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
