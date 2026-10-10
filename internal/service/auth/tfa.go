@@ -113,7 +113,7 @@ func (s *TfaService) BeginTfaLogin(ctx context.Context, user *entity.User) (*api
 	tfaType := api.TfaCheck
 	payload := dto.BuildUserPayload(user)
 	return &api.LoginResponse{
-		Type:    api.LoginResponseTypeEmailCheck,
+		Type:    api.EmailCheck,
 		TfaType: &tfaType,
 		Secret:  &secret,
 		User:    &payload,
@@ -183,7 +183,7 @@ func (s *TfaService) completeStep(ctx context.Context, secret, code, method stri
 	payload := dto.BuildUserPayload(user)
 	return &api.LoginResponse{
 		AccessToken: &token,
-		Type:        api.LoginResponseTypeAccessToken,
+		Type:        api.AccessToken,
 		User:        &payload,
 	}, nil
 }

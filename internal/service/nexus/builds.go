@@ -187,16 +187,16 @@ func toBuildView(b *entity.NexusBuild) *api.NexusBuildView {
 func toViewStatus(status string) api.NexusBuildViewStatus {
 	switch status {
 	case entity.NexusStatusDone:
-		return api.Completed
+		return api.NexusBuildViewStatusCompleted
 	case entity.NexusStatusCanceled:
-		return api.Cancelled
+		return api.NexusBuildViewStatusCancelled
 	case entity.NexusStatusBuilding:
-		return api.Building
+		return api.NexusBuildViewStatusBuilding
 	case entity.NexusStatusFailed:
-		return api.Failed
+		return api.NexusBuildViewStatusFailed
 	default:
 		// pending 及任何未识别中间态一律回 pending（枚举收敛）。
-		return api.Pending
+		return api.NexusBuildViewStatusPending
 	}
 }
 

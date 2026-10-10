@@ -285,7 +285,7 @@ func (s *PasskeyService) VerifyAuthLogin(ctx context.Context, req dto.VerifyAuth
 	payload := dto.BuildUserPayload(user)
 	return &api.LoginResponse{
 		AccessToken: &token,
-		Type:        api.LoginResponseTypeAccessToken,
+		Type:        api.AccessToken,
 		User:        &payload,
 	}, nil
 }
@@ -319,7 +319,7 @@ func (s *PasskeyService) BeginTfaLogin(ctx context.Context, user *entity.User) (
 	tfaType := api.PasskeyCheck
 	payload := dto.BuildUserPayload(user)
 	return &api.LoginResponse{
-		Type:           api.LoginResponseTypeEmailCheck,
+		Type:           api.EmailCheck,
 		TfaType:        &tfaType,
 		Secret:         &secret,
 		PasskeyOptions: &options,

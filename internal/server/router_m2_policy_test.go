@@ -29,7 +29,7 @@ import (
 // 164 个 operation（M2 收口 68 + M3 T01 骨架 96；M3 设计 §1.3 策略
 // 总表逐行勾稽，其中 settings 域设计合计栏"6"为笔误、实为 9——
 // 本常量以逐行清单为准）。
-const expectedOperations = 164
+const expectedOperations = 172
 
 // m2SecuredOpenapiOperations openapi.yaml 中声明了 security 块的 operation
 // 集合（契约现状约定）：仅 M1 认证域的 16 个 JWT 端点标注
