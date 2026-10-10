@@ -160,6 +160,14 @@ func (r *UserRepo) ListForShare(ctx context.Context, nameLike string) ([]entity.
 	return rows, err
 }
 
+// ListAllWithSecrets 全量用户（含敏感列 tfaSecret/info——强制 MFA
+// 前置校验判定「未绑定 2FA」用），username ASC 稳定排序。
+func (r *UserRepo) ListAllWithSecrets(ctx context.Context) ([]entity.User, error) {
+	rows := make([]entity.User, 0)
+	err := r.WithSecrets(ctx).Order("username ASC").Find(&rows).Error
+	return rows, err
+}
+
 // ListAccessibleUsers 非 admin 三源并集（设计事实①）：自己 ∪
 // user_user_permissions 授权用户 ∪ 授权设备组内设备的归属用户；
 // 排序 username ASC（契约）。status 参数仅 admin 分支应用，此处不过滤。

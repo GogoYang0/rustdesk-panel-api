@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/api"
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/dto"
@@ -267,9 +268,15 @@ func (h *AddressBookHandler) sharedProfilesGet(w http.ResponseWriter, r *http.Re
 }
 
 // SharedProfilesPost POST /api/ab/shared/profiles（body 分页，同义 GET）。
+// 官方客户端（ab_model.dart _getSharedAbProfiles）以空体 POST +
+// query 传参——空体走查询参数（v0.2.1）。
 func (h *AddressBookHandler) SharedProfilesPost(w http.ResponseWriter, r *http.Request) {
 	userGuid, ok := h.ident(w, r)
 	if !ok {
+		return
+	}
+	if r.ContentLength == 0 {
+		h.sharedProfilesGet(w, r)
 		return
 	}
 	req, ok := httpx.DecodeJSON[api.BookPaginationRequest](w, r)
@@ -420,17 +427,48 @@ func (h *AddressBookHandler) PeersGet(w http.ResponseWriter, r *http.Request) {
 }
 
 // PeersPost POST /api/ab/peers（body 传参；分页参数仍走 query——
-// 参考 @Query() 同源语义）。
+// 参考 @Query() 同源语义）。官方客户端（ab_model.dart _fetchPeers）
+// 以 Content-Length:0 空体 POST + query 传参——空体视为零值查询（v0.2.1）。
 func (h *AddressBookHandler) PeersPost(w http.ResponseWriter, r *http.Request) {
 	userGuid, ok := h.ident(w, r)
 	if !ok {
 		return
 	}
-	req, ok := httpx.DecodeJSON[api.AbPeersQueryRequest](w, r)
+	req, ok := httpx.DecodeJSONOptional[api.AbPeersQueryRequest](w, r)
 	if !ok {
 		return
 	}
+	empty := api.AbPeersQueryRequest{}
+	if req == nil {
+		req = &empty
+	}
+	// 官方客户端筛选与 ab 均经 query 传参（_fetchPeers）：body 缺省
+	// 字段回填 query 值（body 优先，兼容本仓 web 封装）。
 	q := r.URL.Query()
+	if req.Ab == "" && q.Has("ab") {
+		req.Ab = q.Get("ab")
+	}
+	if req.Id == nil && q.Has("id") {
+		v := q.Get("id")
+		req.Id = &v
+	}
+	if req.Alias == nil && q.Has("alias") {
+		v := q.Get("alias")
+		req.Alias = &v
+	}
+	if req.TagMode == nil && q.Has("tagMode") {
+		v := api.AbPeersQueryRequestTagMode(q.Get("tagMode"))
+		req.TagMode = &v
+	}
+	if req.Tags == nil && q.Has("tags") {
+		values := []string{}
+		for _, t := range strings.Split(q.Get("tags"), ",") {
+			if t != "" {
+				values = append(values, t)
+			}
+		}
+		req.Tags = &values
+	}
 	var current, pageSize *int
 	if !parseAuditPage(w, q, &current, &pageSize) {
 		return
@@ -508,10 +546,16 @@ func (h *AddressBookHandler) TagsGet(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, list)
 }
 
-// TagsReplace POST /api/ab/tags/{guid}（全量替换）。
+// TagsReplace POST /api/ab/tags/{guid}：官方客户端（ab_model.dart
+// _fetchTags）以 Content-Length:0 空体 POST 此路径"拉取"标签——空体
+// 等价 GET（返回当前标签列表，v0.2.1）；非空体 = 全量替换（契约）。
 func (h *AddressBookHandler) TagsReplace(w http.ResponseWriter, r *http.Request) {
 	userGuid, ok := h.ident(w, r)
 	if !ok {
+		return
+	}
+	if r.ContentLength == 0 {
+		h.TagsGet(w, r)
 		return
 	}
 	req, ok := httpx.DecodeJSON[api.AbTagsReplaceRequest](w, r)

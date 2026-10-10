@@ -121,12 +121,13 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 
 	// GAP2 强制 MFA + 登录审计：策略键目录（mfa.*，category=mfa）+ 绑定
 	// 服务 + best-effort 审计记录器；三登录收敛点统一判定（OQ-3）。
-	settingMfa := settingssvc.NewMfaService(settingStore)
+	settingMfa := settingssvc.NewMfaService(settingStore).WithRepos(users, groups)
 	loginAudits := repository.NewLoginAuditRepo(deps.DB)
 	loginAuditRecorder := authsvc.NewLoginAuditRecorder(loginAudits, deps.Logger)
 	mfaSvc := authsvc.NewMfaService(users, sessions, tokenSvc, settingMfa).WithLogin(loginSvc).WithAuditRecorder(loginAuditRecorder)
 	loginSvc.WithMfa(mfaSvc, loginAuditRecorder)
 	tfaSvc.WithAuditRecorder(loginAuditRecorder)
+	tfaSvc.WithPolicy(settingMfa)
 	passkeySvc.WithMfa(mfaSvc, loginAuditRecorder)
 	oidcSvc.WithMfa(mfaSvc, loginAuditRecorder)
 
@@ -181,8 +182,12 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 		repository.NewAddressBookPeerTagRepo(deps.DB),
 		deps.Config.AdminUsername, deps.Logger)
 	querySvc := devicesvc.NewQueryService(peerRepo, sysinfoRepo, users, deviceGroupRepo, strategyRepo)
+	// v0.2.1：连接审计仓储先建（断开"全部"语义底座：空 connIds →
+	// 审计活跃连接收集）。
+	connAuditRepo := repository.NewConnectionAuditRepo(deps.DB)
 	adminSvc := devicesvc.NewAdminService(
-		authzSvc, peerRepo, sysinfoRepo, users, deviceGroupRepo, strategyRepo, disconnects)
+		authzSvc, peerRepo, sysinfoRepo, users, deviceGroupRepo, strategyRepo, disconnects).
+		WithConnAuditRepo(connAuditRepo)
 	// GAP2 设备个人归属域：assign/解绑（devices.assign）+ me/user 设备查询。
 	assignSvc := devicesvc.NewAssignService(
 		authzSvc, auditSvc, peerRepo, sysinfoRepo, users, deviceGroupRepo, strategyRepo)
@@ -219,7 +224,6 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	// alarm nonce 幂等）+ 查询六端（active 的 scope 过滤复用 RBAC
 	// 授权服务与 peers 仓储；console 查询复用 M2 auditRepo）。仪表盘
 	// systemStatus 磁盘统计以 DATA_DIR 所在卷为锚点（§10-6 批复）。
-	connAuditRepo := repository.NewConnectionAuditRepo(deps.DB)
 	fileAuditRepo := repository.NewFileAuditRepo(deps.DB)
 	alarmAuditRepo := repository.NewAlarmAuditRepo(deps.DB)
 	dashboardRepo := repository.NewDashboardRepo(deps.DB)
@@ -287,12 +291,13 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	// update-check 域（M3 T07，事实④）：每小时 cron 拉取
 	// {NEXUS_UPSTREAM}/v1/update/check；install_id 落 system_settings。
 	updateCheckSvc := updatechecksvc.NewService(updatechecksvc.Options{
-		Upstream: deps.Config.NexusUpstream,
-		Version:  deps.Config.Version,
-		Channel:  deps.Config.UpdateChannel,
-		Settings: settingRepo,
-		Counters: repository.NewUpdateCheckCounters(deps.DB),
-	})
+		Upstream:   deps.Config.NexusUpstream,
+		GitHubBase: deps.Config.GitHubAPIBase,
+		Version:    deps.Config.Version,
+		Channel:    deps.Config.UpdateChannel,
+		Settings:   settingRepo,
+		Counters:   repository.NewUpdateCheckCounters(deps.DB),
+	}).WithLogger(deps.Logger)
 	updateCheckH := handler.NewUpdateCheckHandler(updateCheckSvc)
 	// 调度器仅构造，不启动（main 显式 Start/Stop，便于优雅退出）。
 	updateCheckScheduler := updatechecksvc.NewScheduler(updateCheckSvc, deps.Logger)

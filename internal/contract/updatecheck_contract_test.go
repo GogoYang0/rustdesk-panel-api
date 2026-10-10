@@ -1,11 +1,14 @@
-// updatecheck_contract_test.go 更新检查域（M3 T07，事实④）1 端点契约用例：
-// 以 openapi.yaml 为准绳做请求/响应双向校验；上游以 httptest stub 注入
-// （NEXUS_UPSTREAM 覆写，仅测试用），锁定 backend/frontend 双分支与
-// frontend_version 查询参数仅影响 frontend 分支比对。
+// updatecheck_contract_test.go 更新检查域（M3 T07 事实④ + v0.2.1 问题 12）
+// 1 端点契约用例：以 openapi.yaml 为准绳做请求/响应双向校验。版本源 =
+// GitHub Releases（httptest stub 注入 GITHUB_API_BASE，仅测试用）；
+// 遥测上游 stub 保留（best-effort，不再决定版本结果）。锁定
+// backend/frontend 双分支、changelog/downloadUrl 与 frontend_version
+// 查询参数仅影响 frontend 分支比对。
 package contract
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,21 +17,37 @@ import (
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/config"
 )
 
-// newUpdateCheckContractServer 全栈契约服务器 + 假上游。
+// githubReleaseStub 单仓 releases/latest 响应体。
+func githubReleaseStub(tag, body, htmlURL string) string {
+	return fmt.Sprintf(`{"tag_name":%q,"body":%q,"html_url":%q}`, tag, body, htmlURL)
+}
+
+// newUpdateCheckContractServer 全栈契约服务器 + 假 GitHub API + 假遥测上游。
 //
-// stub 返回 {backend:{version,download_url}, frontend:{...}} 形态；
-// 面板按版本号语义化比较得出 hasUpdate。
-func newUpdateCheckContractServer(t *testing.T, upstreamBody string) *contractServer {
+// github 仓 → tag 映射：GogoYang0/rustdesk-panel-web → webTag（body=webBody），
+// GogoYang0/rustdesk-panel-api → apiTag。遥测上游恒 200 空对象。
+func newUpdateCheckContractServer(t *testing.T, webTag, webBody, apiTag string) *contractServer {
 	t.Helper()
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Path != "/v1/update/check" {
+		switch r.URL.Path {
+		case "/repos/GogoYang0/rustdesk-panel-web/releases/latest":
+			_, _ = w.Write([]byte(githubReleaseStub(webTag, webBody,
+				"https://github.com/GogoYang0/rustdesk-panel-web/releases/tag/"+webTag)))
+		case "/repos/GogoYang0/rustdesk-panel-api/releases/latest":
+			_, _ = w.Write([]byte(githubReleaseStub(apiTag, "",
+				"https://github.com/GogoYang0/rustdesk-panel-api/releases/tag/"+apiTag)))
+		default:
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{}`))
-			return
 		}
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
+	}))
+	t.Cleanup(github.Close)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/v1/update/check" || r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{}`))
 			return
 		}
@@ -40,18 +59,20 @@ func newUpdateCheckContractServer(t *testing.T, upstreamBody string) *contractSe
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(upstreamBody))
+		_, _ = w.Write([]byte(`{}`))
 	}))
 	t.Cleanup(upstream.Close)
+
 	return newSettingsContractServer(t, func(cfg *config.Config) {
+		cfg.GitHubAPIBase = github.URL
 		cfg.NexusUpstream = upstream.URL
 	})
 }
 
-// TestContractUpdateCheck 上游有新版时 backend/frontend 双分支比对正确。
+// TestContractUpdateCheck GitHub 有新版时 backend/frontend 双分支比对
+// 正确（tag 去 v、changelog/downloadUrl 回填）。
 func TestContractUpdateCheck(t *testing.T) {
-	cs := newUpdateCheckContractServer(t,
-		`{"backend":{"version":"9.9.9","download_url":"https://dl.example/panel"},"frontend":{"version":"9.9.9","download_url":"https://dl.example/web"}}`)
+	cs := newUpdateCheckContractServer(t, "v9.9.9", "- 修复审计上报\n- 修复标签 400", "v9.9.9")
 	token, _ := abLogin(t, cs)
 
 	raw := cs.get(t, "/api/update-check", bearer(token), http.StatusOK)
@@ -71,6 +92,9 @@ func TestContractUpdateCheck(t *testing.T) {
 	}
 	if view.Backend.DownloadUrl == "" {
 		t.Errorf("backend.downloadUrl must be set when hasUpdate (%s)", raw)
+	}
+	if view.Frontend.Changelog != "- 修复审计上报\n- 修复标签 400" {
+		t.Errorf("frontend.changelog = %q, want release body (%s)", view.Frontend.Changelog, raw)
 	}
 	if view.InstallI == nil || *view.InstallI == "" {
 		t.Errorf("install_id must be non-empty (%s)", raw)
@@ -96,11 +120,13 @@ func TestContractUpdateCheck(t *testing.T) {
 	}
 }
 
-// TestContractUpdateCheckUpstreamUnavailable 上游不可用时仍 200
+// TestContractUpdateCheckUpstreamUnavailable GitHub 不可用时仍 200
 // （零更新结果，不阻断面板）。
 func TestContractUpdateCheckUpstreamUnavailable(t *testing.T) {
+	// 覆写为不可达基址（127.0.0.1:1 端口拒绝）。
 	cs := newSettingsContractServer(t, func(cfg *config.Config) {
-		cfg.NexusUpstream = "http://127.0.0.1:1"
+		cfg.GitHubAPIBase = "http://127.0.0.1:1"
+		cfg.NexusUpstream = "http://127.0.0.1:2"
 	})
 	token, _ := abLogin(t, cs)
 
@@ -119,7 +145,7 @@ func TestContractUpdateCheckUpstreamUnavailable(t *testing.T) {
 
 // TestContractUpdateCheckUnauthorized 未认证 → 401（AdminGuard）。
 func TestContractUpdateCheckUnauthorized(t *testing.T) {
-	cs := newUpdateCheckContractServer(t, `{}`)
+	cs := newUpdateCheckContractServer(t, "v9.9.9", "notes", "v9.9.9")
 	cs.get(t, "/api/update-check", nil, http.StatusUnauthorized)
 }
 
@@ -129,4 +155,5 @@ type updateBranchView struct {
 	Latest      string `json:"latest"`
 	HasUpdate   bool   `json:"hasUpdate"`
 	DownloadUrl string `json:"downloadUrl"`
+	Changelog   string `json:"changelog"`
 }

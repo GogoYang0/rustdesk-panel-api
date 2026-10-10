@@ -163,6 +163,18 @@ func (r *ConnectionAuditRepo) UpsertConn(ctx context.Context, in *entity.Connect
 			existing.EstablishedAt = &now
 		}
 		return existing, false, nil
+	case entity.ConnActionClose:
+		// 'close' → 置 closedAt（幂等：已关闭行不覆写）。
+		if existing.ClosedAt == nil {
+			now := time.Now()
+			if err := r.db.WithContext(ctx).Model(&entity.ConnectionAudit{}).
+				Where("id = ?", existing.Id).
+				Update("closedAt", now).Error; err != nil {
+				return nil, false, err
+			}
+			existing.ClosedAt = &now
+		}
+		return existing, false, nil
 	default:
 		// 未知/重放 action：幂等返回既有行。
 		return existing, false, nil
@@ -238,6 +250,20 @@ func (r *ConnectionAuditRepo) ListActive(ctx context.Context, allowedUUIDs []str
 		return nil, err
 	}
 	return out, nil
+}
+
+// ListActiveByUUID 单设备活跃连接列表（断开连接"全部"语义底座）：
+// 未关闭行（closedAt IS NULL），按 requestedAt DESC 排序。
+func (r *ConnectionAuditRepo) ListActiveByUUID(ctx context.Context, deviceUuid string) ([]entity.ConnectionAudit, error) {
+	out := make([]entity.ConnectionAudit, 0)
+	if deviceUuid == "" {
+		return out, nil
+	}
+	err := r.db.WithContext(ctx).Model(&entity.ConnectionAudit{}).
+		Where("closedAt IS NULL AND deviceUuid = ?", deviceUuid).
+		Order("requestedAt DESC, id DESC").
+		Find(&out).Error
+	return out, err
 }
 
 // FindByID 按自增主键查询（PATCH /api/audits/conn/{id} 存在性检查）；

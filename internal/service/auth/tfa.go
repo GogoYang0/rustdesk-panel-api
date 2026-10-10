@@ -25,6 +25,9 @@ type TfaService struct {
 	tokens   *TokenService
 	// audits 登录审计记录器（GAP2 G3；nil 时跳过）。
 	audits *LoginAuditRecorder
+	// policy 强制 MFA 策略读取口（v0.2.1：被强制用户禁止解绑 TOTP；
+	// nil 时不拦截——单测兼容）。
+	policy MfaPolicyReader
 }
 
 // NewTfaService 构建服务。
@@ -36,6 +39,32 @@ func NewTfaService(users *repository.UserRepo, sessions *repository.LoginSession
 func (s *TfaService) WithAuditRecorder(audits *LoginAuditRecorder) *TfaService {
 	s.audits = audits
 	return s
+}
+
+// WithPolicy 注入强制 MFA 策略读取口（bootstrap 装配；v0.2.1）。
+func (s *TfaService) WithPolicy(policy MfaPolicyReader) *TfaService {
+	s.policy = policy
+	return s
+}
+
+// msgTfaUnbindBlocked 被强制用户解绑 TOTP 的 403 固定文案（web 按
+// 错误码 403 + 服务端 message 展示，i18n 双语在 web errors.json）。
+const msgTfaUnbindBlocked = "Two-factor authentication is enforced by policy. Remove your account from the enforcement scope before unbinding."
+
+// enforceUnbindGuard 解绑前置守卫（v0.2.1）：策略侧命中（enforceGlobal
+// 或用户组在强制名单）→ 403 拒绝解绑；从强制组移除后方可解绑。
+func (s *TfaService) enforceUnbindGuard(ctx context.Context, user *entity.User) error {
+	if s.policy == nil {
+		return nil
+	}
+	hit, err := s.policy.Enforced(ctx, derefStr(user.UserGroupGuid))
+	if err != nil {
+		return err
+	}
+	if hit {
+		return Forbidden(msgTfaUnbindBlocked)
+	}
+	return nil
 }
 
 // Setup 生成 TOTP 密钥：pending secret 存 users.info.other.tfa_pending_secret
@@ -97,6 +126,10 @@ func (s *TfaService) Disable(ctx context.Context, userGuid, code string) (api.Me
 		if errors.Is(err, repository.ErrNotFound) {
 			return api.MessageResponse{}, NotFound("User not found")
 		}
+		return api.MessageResponse{}, err
+	}
+	// v0.2.1 强制 MFA 守卫：被强制用户（全局/组级命中）禁止解绑。
+	if err := s.enforceUnbindGuard(ctx, user); err != nil {
 		return api.MessageResponse{}, err
 	}
 	if user.TfaSecret == "" {
