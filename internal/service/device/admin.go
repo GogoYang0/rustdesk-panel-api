@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/rustdesk-panel/rustdesk-panel-api/internal/dto"
@@ -29,6 +30,15 @@ type AdminService struct {
 	assembler viewAssembler
 	peers     *repository.PeerRepo
 	store     *DisconnectStore
+	// connAudits 连接审计仓储（v0.2.1：断开"全部"语义底座；nil 时
+	// 空 connIds 维持空转成功——单测兼容）。
+	connAudits *repository.ConnectionAuditRepo
+}
+
+// WithConnAuditRepo 注入连接审计仓储（bootstrap 装配；v0.2.1）。
+func (s *AdminService) WithConnAuditRepo(r *repository.ConnectionAuditRepo) *AdminService {
+	s.connAudits = r
+	return s
 }
 
 // NewAdminService 构建管理域服务。
@@ -61,6 +71,7 @@ func (s *AdminService) GetDevices(ctx context.Context, actorGuid string, q dto.D
 	}
 	filter := repository.DeviceFilter{
 		ID:              q.ID,
+		Guid:            q.Guid,
 		Status:          q.Status,
 		IsOnline:        q.IsOnline,
 		DeviceName:      q.DeviceName,
@@ -198,9 +209,26 @@ func (s *AdminService) DeleteDevice(ctx context.Context, actorGuid, uuid string)
 // Disconnect 断开设备连接（devices.disconnect）：校验通过后将 connIds
 // 入队，客户端下一次心跳收到 disconnect 键；响应 pending_disconnect_count
 // 为当前 pending 总数（含本次入队）。
+// v0.2.1：connIds 空数组/缺省 = 断开该设备全部活跃连接——从连接审计
+// 未关闭行收集 connId（非数值 conn_id 跳过），无活跃连接时空转成功。
 func (s *AdminService) Disconnect(ctx context.Context, actorGuid, uuid string, connIDs []int64) (dto.DisconnectResult, error) {
 	if _, _, err := s.authz.AssertDeviceAccess(ctx, actorGuid, rbac.CodeDevicesDisconnect, uuid); err != nil {
 		return dto.DisconnectResult{}, err
+	}
+	if len(connIDs) == 0 && s.connAudits != nil {
+		rows, err := s.connAudits.ListActiveByUUID(ctx, uuid)
+		if err != nil {
+			return dto.DisconnectResult{}, err
+		}
+		connIDs = make([]int64, 0, len(rows))
+		for _, row := range rows {
+			if row.ConnId == nil {
+				continue
+			}
+			if id, perr := strconv.ParseInt(*row.ConnId, 10, 64); perr == nil {
+				connIDs = append(connIDs, id)
+			}
+		}
 	}
 	s.store.AddPending(uuid, connIDs)
 	return dto.DisconnectResult{PendingDisconnectCount: len(s.store.Pending(uuid))}, nil

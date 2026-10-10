@@ -516,14 +516,14 @@ func TestQA_M3_Idempotency_ConnUpsert(t *testing.T) {
 	as, seed := qaM3Server(t)
 	client := as.TS.Client()
 	devID := seed.PeerA.ID
-	connID := "qa-conn-idem-1"
 	body := map[string]any{
 		"id":      devID,
 		"uuid":    seed.PeerA.UUID,
-		"conn_id": connID,
+		"conn_id": 51, // 官方客户端为数值 i32（v0.2.1 契约修正）
 		"peer":    []string{devID, "qa-peer"},
 		"action":  "new",
 	}
+	connIDStr := "51"
 
 	for i := 0; i < 2; i++ {
 		status, _, raw := doJSON(t, client, http.MethodPost, as.TS.URL+"/api/audit/conn", body, nil)
@@ -533,7 +533,7 @@ func TestQA_M3_Idempotency_ConnUpsert(t *testing.T) {
 	}
 	var count int64
 	if err := as.DB.Model(&entity.ConnectionAudit{}).
-		Where("deviceId = ? AND connId = ?", devID, connID).Count(&count).Error; err != nil {
+		Where("deviceId = ? AND connId = ?", devID, connIDStr).Count(&count).Error; err != nil {
 		t.Fatalf("count conn audits: %v", err)
 	}
 	if count != 1 {
@@ -722,11 +722,11 @@ func TestQA_M3_ThreeWay_PolicyDistribution(t *testing.T) {
 		counts[r.Policy]++
 	}
 	total := len(as.Router.Routes())
-	if total != 172 {
-		t.Errorf("路由总数 = %d, want 172", total)
+	if total != 173 {
+		t.Errorf("路由总数 = %d, want 173", total)
 	}
 	want := map[string]int{
-		"public": 21, "auth": 54, "perm": 65, "admin_guard": 25, "super_admin": 7,
+		"public": 21, "auth": 54, "perm": 66, "admin_guard": 25, "super_admin": 7,
 	}
 	for policy, w := range want {
 		if counts[policy] != w {

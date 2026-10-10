@@ -216,8 +216,10 @@ type UpdateDeviceRequest struct {
 }
 
 // DisconnectRequest POST /api/devices/{uuid}/disconnect 请求体。
+// connIds 缺省或空数组 = 断开该设备全部活跃连接（v0.2.1 修复：契约
+// 放宽 required/minItems，web 整机断开传空数组）。
 type DisconnectRequest struct {
-	ConnIDs []int64 `json:"connIds" validate:"required,min=1"`
+	ConnIDs []int64 `json:"connIds"`
 }
 
 // DisconnectResult 断连入队结果：pending_disconnect_count 为当前
@@ -281,6 +283,7 @@ type DeviceListQuery struct {
 	Status          *int
 	IsOnline        *bool
 	ID              string
+	Guid            string
 	DeviceName      string
 	UserName        string
 	DeviceUsername  string
@@ -297,6 +300,7 @@ func ParseDeviceListQuery(q url.Values) DeviceListQuery {
 		Status:          statusOr(q, "status"),
 		IsOnline:        boolOr(q, "is_online"),
 		ID:              q.Get("id"),
+		Guid:            q.Get("guid"),
 		DeviceName:      q.Get("device_name"),
 		UserName:        q.Get("user_name"),
 		DeviceUsername:  q.Get("device_username"),

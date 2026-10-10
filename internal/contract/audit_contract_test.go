@@ -87,7 +87,7 @@ func TestContractAuditReportConnStateMachines(t *testing.T) {
 	report := func(action any) {
 		t.Helper()
 		body := map[string]any{
-			"id": "dev-ct", "uuid": "uuid-ct", "conn_id": "c-1",
+			"id": "dev-ct", "uuid": "uuid-ct", "conn_id": 11,
 			"ip": "10.1.1.9", "peer": []string{"900001", "alpha"}, "type": 1,
 		}
 		if action != nil {
@@ -100,7 +100,7 @@ func TestContractAuditReportConnStateMachines(t *testing.T) {
 	}
 	connRow := func() map[string]any {
 		t.Helper()
-		rows, total := auditList(t, cs.get(t, "/api/audits/conn?uuid=uuid-ct&conn_id=c-1", admin, http.StatusOK))
+		rows, total := auditList(t, cs.get(t, "/api/audits/conn?uuid=uuid-ct&conn_id=11", admin, http.StatusOK))
 		if total != 1 {
 			t.Fatalf("rows total = %d, want 1", total)
 		}
@@ -141,7 +141,7 @@ func TestContractAuditReportConnNoteOnly(t *testing.T) {
 
 	// 常规上报带 session_id（该报文 action 缺省 → 行 established）。
 	cs.post(t, "/api/audit/conn", map[string]any{
-		"id": "dev-note", "uuid": "uuid-note", "conn_id": "c-n", "session_id": "sess-n1",
+		"id": "dev-note", "uuid": "uuid-note", "conn_id": 12, "session_id": "sess-n1",
 	}, nil, http.StatusOK)
 
 	// note-only 上报：200 固定文案。
@@ -154,7 +154,7 @@ func TestContractAuditReportConnNoteOnly(t *testing.T) {
 
 	// 行内 note 更新。
 	rows, _ := auditList(t, cs.get(t, "/api/audits/conn?uuid=uuid-note", admin, http.StatusOK))
-	row := auditRowBy(t, rows, "conn_id", "c-n")
+	row := auditRowBy(t, rows, "conn_id", "12")
 	if row["note"] != "reviewed" {
 		t.Errorf("note = %v, want reviewed", row["note"])
 	}
@@ -179,7 +179,7 @@ func TestContractAuditReportFileNonceReplay(t *testing.T) {
 			"id": "dev-fx", "uuid": "uuid-fx", "peer_id": "900001",
 			"type": 0, "is_file": true, "path": "C:/tmp",
 			"info":  fmt.Sprintf(`{"ip":"10.2.3.4","name":"win11","num":%d,"files":%s}`, num, files),
-			"nonce": "nonce-fx-1", "conn_id": "c-f",
+			"nonce": "nonce-fx-1", "conn_id": 13,
 		}
 	}
 
@@ -230,7 +230,7 @@ func TestContractAuditReportAlarmNonceReplay(t *testing.T) {
 		return map[string]any{
 			"id": "dev-ax", "uuid": "uuid-ax", "typ": typ,
 			"info":  `{"id":"ALM-1","ip":"10.2.3.5","name":"cpu spike"}`,
-			"nonce": "nonce-ax-1", "conn_id": "c-a",
+			"nonce": "nonce-ax-1", "conn_id": 14,
 		}
 	}
 

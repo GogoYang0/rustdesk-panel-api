@@ -136,6 +136,16 @@ const (
 	MfaEnroll   LoginResponseType = "mfa_enroll"
 )
 
+// Defines values for MfaEnforcementConflictError.
+const (
+	MfaEnforcementConflictErrorBadRequest MfaEnforcementConflictError = "Bad Request"
+)
+
+// Defines values for MfaEnforcementConflictStatusCode.
+const (
+	N400 MfaEnforcementConflictStatusCode = 400
+)
+
 // Defines values for NexusBuildViewStatus.
 const (
 	NexusBuildViewStatusBuilding  NexusBuildViewStatus = "building"
@@ -186,6 +196,22 @@ const (
 	SharedBookRowRuleN1 SharedBookRowRule = 1
 	SharedBookRowRuleN2 SharedBookRowRule = 2
 	SharedBookRowRuleN3 SharedBookRowRule = 3
+)
+
+// Defines values for StrategyOptionPresetCategory.
+const (
+	Connection StrategyOptionPresetCategory = "connection"
+	Display    StrategyOptionPresetCategory = "display"
+	Other      StrategyOptionPresetCategory = "other"
+	Permission StrategyOptionPresetCategory = "permission"
+	Security   StrategyOptionPresetCategory = "security"
+)
+
+// Defines values for StrategyOptionPresetType.
+const (
+	Bool   StrategyOptionPresetType = "bool"
+	Int    StrategyOptionPresetType = "int"
+	String StrategyOptionPresetType = "string"
 )
 
 // Defines values for UpdateUserRequestStatus.
@@ -400,9 +426,9 @@ type AbSettings struct {
 // AbSettingsMaxPeerOneAb defines model for AbSettings.MaxPeerOneAb.
 type AbSettingsMaxPeerOneAb int
 
-// AbTag 地址簿标签（color 为 ARGB uint）。
+// AbTag 地址簿标签（color 为 ARGB uint32——官方客户端 Dart Color.value 取值 0xAARRGGBB，最高位 0xFF，可超 int32 上限，故契约用 int64 承载）。
 type AbTag struct {
-	Color int32  `json:"color"`
+	Color int64  `json:"color"`
 	Guid  string `json:"guid"`
 	Name  string `json:"name"`
 }
@@ -418,16 +444,16 @@ type AbTagRenameRequest struct {
 	Name string `json:"name"`
 }
 
-// AbTagUpsertRequest 新增标签（同名 409）/更新颜色。
+// AbTagUpsertRequest 新增标签（同名 409）/更新颜色。color 为 ARGB uint32（官方 客户端 str2color 产物可超 int32）。
 type AbTagUpsertRequest struct {
-	Color int32  `json:"color"`
+	Color int64  `json:"color"`
 	Name  string `json:"name"`
 }
 
 // AbTagsReplaceRequest 全量替换书内标签。
 type AbTagsReplaceRequest struct {
 	Tags []struct {
-		Color int32  `json:"color"`
+		Color int64  `json:"color"`
 		Name  string `json:"name"`
 	} `json:"tags"`
 }
@@ -488,8 +514,10 @@ type AlarmAuditPage struct {
 // AlarmAuditReport 告警审计上报（Public + per-IP 50/min；UNIQUE(device_id,nonce) 幂等）。
 type AlarmAuditReport struct {
 	ConnAuditRef *string `json:"conn_audit_ref,omitempty"`
-	ConnId       *string `json:"conn_id,omitempty"`
-	Id           string  `json:"id"`
+
+	// ConnId 客户端内部连接序号（数值）
+	ConnId *int   `json:"conn_id,omitempty"`
+	Id     string `json:"id"`
 
 	// Info JSON 字符串原样落库
 	Info  string  `json:"info"`
@@ -640,11 +668,13 @@ type ConnAuditPage struct {
 	Total int            `json:"total"`
 }
 
-// ConnAuditReport 连接审计上报（Public + per-IP 50/min；upsert：按 id+uuid+conn_id 定位， action='new'→'open'、”→'established'）。
+// ConnAuditReport 连接审计上报（Public + per-IP 50/min；upsert：按 id+uuid+conn_id 定位， action='new'→'open'、”→'established'、'close'→closedAt）。官方客户端 （rustdesk src/server/connection.rs post_conn_audit）conn_id 为数值 self.inner.id（i32），契约按 integer 承载，服务端落库转字符串。
 type ConnAuditReport struct {
 	Action       *string `json:"action,omitempty"`
 	ConnAuditRef *string `json:"conn_audit_ref,omitempty"`
-	ConnId       *string `json:"conn_id,omitempty"`
+
+	// ConnId 客户端内部连接序号（数值）
+	ConnId *int `json:"conn_id,omitempty"`
 
 	// Id 设备 id
 	Id          string    `json:"id"`
@@ -906,9 +936,9 @@ type DeviceView struct {
 	UserName string  `json:"user_name"`
 }
 
-// DisconnectRequest defines model for DisconnectRequest.
+// DisconnectRequest connIds 缺省或空数组 = 断开该设备全部活跃连接（服务端从连接审计 未关闭行收集 connId 入队）；非空 = 仅断开指定连接。web 端 「断开连接」整机动作传空数组。
 type DisconnectRequest struct {
-	ConnIds []int `json:"connIds"`
+	ConnIds *[]int `json:"connIds,omitempty"`
 }
 
 // DisconnectResult defines model for DisconnectResult.
@@ -968,7 +998,8 @@ type FileAuditPage struct {
 
 // FileAuditReport 文件审计上报（Public + per-IP 50/min；UNIQUE(device_id,nonce) 幂等）。
 type FileAuditReport struct {
-	ConnId *string `json:"conn_id,omitempty"`
+	// ConnId 客户端内部连接序号（数值）
+	ConnId *int `json:"conn_id,omitempty"`
 
 	// Id 设备 id
 	Id string `json:"id"`
@@ -1218,6 +1249,31 @@ type MemberView struct {
 type MessageResponse struct {
 	Message string `json:"message"`
 }
+
+// MfaEnforcementConflict 强制 MFA 策略更新被拒（400）：目标用户中存在未绑定 TOTP 且未开启 passkey-2FA 的用户。users 为未绑定用户名单（web 弹窗展示）。
+type MfaEnforcementConflict struct {
+	Error MfaEnforcementConflictError `json:"error"`
+
+	// Message 固定文案 MFA enforcement blocked: users without 2FA found
+	Message    string                           `json:"message"`
+	StatusCode MfaEnforcementConflictStatusCode `json:"statusCode"`
+
+	// Users 未绑定 2FA 的用户名单
+	Users []struct {
+		DisplayName string `json:"display_name"`
+		Guid        string `json:"guid"`
+
+		// UserGroupName 所属用户组名（未分组为空串；仅 group 命中时标注来源组）
+		UserGroupName string `json:"user_group_name"`
+		Username      string `json:"username"`
+	} `json:"users"`
+}
+
+// MfaEnforcementConflictError defines model for MfaEnforcementConflict.Error.
+type MfaEnforcementConflictError string
+
+// MfaEnforcementConflictStatusCode defines model for MfaEnforcementConflict.StatusCode.
+type MfaEnforcementConflictStatusCode int
 
 // MfaEnrollRequest 强制 MFA 绑定第一步载荷（登录响应 type=mfa_enroll 的 secret 即步会话 guid）。
 type MfaEnrollRequest struct {
@@ -1620,6 +1676,28 @@ type StrategyCandidateView struct {
 	Note string `json:"note"`
 }
 
+// StrategyOptionPreset 策略配置项预设（编译期常量，GET /api/strategies/presets 下发）。 key 取自官方客户端 keys.rs 可消费键；type 为值形态（bool 项取值 "Y"/"N"/""——空串=回退内置默认）。
+type StrategyOptionPreset struct {
+	// Category 分类：security=安全 / connection=连接 / display=显示 / permission=权限 / other=其他
+	Category StrategyOptionPresetCategory `json:"category"`
+
+	// DefaultValue 内置默认值（未设置时客户端行为；空串=回退内置默认）
+	DefaultValue string `json:"default_value"`
+
+	// Description 中文说明（web 展示用）
+	Description string `json:"description"`
+	Key         string `json:"key"`
+
+	// Type 值形态；bool 项取值 "Y"/"N"（空串=未设置）
+	Type StrategyOptionPresetType `json:"type"`
+}
+
+// StrategyOptionPresetCategory 分类：security=安全 / connection=连接 / display=显示 / permission=权限 / other=其他
+type StrategyOptionPresetCategory string
+
+// StrategyOptionPresetType 值形态；bool 项取值 "Y"/"N"（空串=未设置）
+type StrategyOptionPresetType string
+
 // StrategyPage defines model for StrategyPage.
 type StrategyPage struct {
 	Data  []StrategyView `json:"data"`
@@ -1687,12 +1765,16 @@ type UpdateBookProfileRequest struct {
 // UpdateCheckResult 更新检查（内存缓存 + frontend_version 仅影响 frontend 分支比对）。
 type UpdateCheckResult struct {
 	Backend struct {
+		// Changelog 最新版本 release notes（GitHub Releases body；缺省 null）
+		Changelog   *string `json:"changelog,omitempty"`
 		Current     string  `json:"current"`
 		DownloadUrl *string `json:"downloadUrl,omitempty"`
 		HasUpdate   bool    `json:"hasUpdate"`
 		Latest      string  `json:"latest"`
 	} `json:"backend"`
 	Frontend struct {
+		// Changelog 最新版本 release notes（GitHub Releases body；缺省 null）
+		Changelog   *string `json:"changelog,omitempty"`
 		Current     string  `json:"current"`
 		DownloadUrl *string `json:"downloadUrl,omitempty"`
 		HasUpdate   bool    `json:"hasUpdate"`
@@ -2070,7 +2152,10 @@ type RemoveDeviceGroupDevicesJSONBody = []string
 
 // ListDevicesParams defines parameters for ListDevices.
 type ListDevicesParams struct {
-	Id       *string                    `form:"id,omitempty" json:"id,omitempty"`
+	Id *string `form:"id,omitempty" json:"id,omitempty"`
+
+	// Guid 设备 guid 精确过滤（peers.uuid；设备详情页定位单设备用）
+	Guid     *string                    `form:"guid,omitempty" json:"guid,omitempty"`
 	Status   *ListDevicesParamsStatus   `form:"status,omitempty" json:"status,omitempty"`
 	IsOnline *ListDevicesParamsIsOnline `form:"is_online,omitempty" json:"is_online,omitempty"`
 
