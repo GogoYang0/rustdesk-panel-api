@@ -114,7 +114,7 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	oidcSvc := authsvc.NewOidcFlowService(providers, users, groups, tokenSvc)
 	cleanupSvc := authsvc.NewCleanupService(tokenRepo, sessions, providers, deps.Logger)
 
-	profileSvc := usersvc.NewProfileService(users, tokenRepo, sessions)
+	profileSvc := usersvc.NewProfileService(deps.DB, users, tokenRepo, sessions)
 	avatarSvc := usersvc.NewAvatarService(users, deps.Config.DataDir)
 
 	// RBAC 横切件：真实仓储适配（T02 起接通）。授权决策实时查库
