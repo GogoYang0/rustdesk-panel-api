@@ -61,11 +61,12 @@ func TestCatalogCodes(t *testing.T) {
 	}
 }
 
-// TestCatalogScopes 断言 device_group 档仅 6 码（devices.* + strategies.assign）。
+// TestCatalogScopes 断言 device_group 档仅 7 码（devices.* + strategies.assign；
+// GAP2 增 devices.assign）。
 func TestCatalogScopes(t *testing.T) {
 	deviceGroupScoped := []string{
 		"devices.view", "devices.edit", "devices.status",
-		"devices.delete", "devices.disconnect", "strategies.assign",
+		"devices.delete", "devices.disconnect", "devices.assign", "strategies.assign",
 	}
 	for _, code := range deviceGroupScoped {
 		d, ok := FindDefinition(code)
@@ -107,6 +108,7 @@ func TestCatalogRequires(t *testing.T) {
 		{"devices.status", []string{"devices.view"}},
 		{"devices.delete", []string{"devices.view"}},
 		{"devices.disconnect", []string{"devices.view"}},
+	{"devices.assign", []string{"devices.view", "users.view"}},
 		{"users.create", []string{"users.view"}},
 		{"users.force_logout", []string{"users.view"}},
 		{"user_groups.membership", []string{"user_groups.view"}},

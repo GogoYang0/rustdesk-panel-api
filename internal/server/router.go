@@ -229,6 +229,9 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 	// ---- 公开端点 ----
 	rt.Handle(http.MethodPost, "/api/login", true, 5, hf(d.Auth.Login))
 	rt.Handle(http.MethodGet, "/api/login-options", true, 20, hf(d.Oidc.LoginOptions))
+	// ---- GAP2 强制 MFA 绑定（公开凭步会话 secret；限流对齐 login 5/min）----
+	rt.Handle(http.MethodPost, "/api/auth/mfa/enroll", true, 5, hf(d.Auth.MfaEnroll))
+	rt.Handle(http.MethodPost, "/api/auth/mfa/enroll/verify", true, 5, hf(d.Auth.MfaEnrollVerify))
 	rt.Handle(http.MethodPost, "/api/passkey/auth/begin", true, 10, hf(d.Auth.PasskeyAuthBegin))
 	rt.Handle(http.MethodPost, "/api/passkey/auth/verify", true, 10, hf(d.Auth.PasskeyAuthVerify))
 	rt.Handle(http.MethodPost, "/api/oidc/auth", true, 5, hf(d.Oidc.RequestAuth))
@@ -254,6 +257,8 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 	rt.Handle(http.MethodPatch, "/api/users/me/password", false, 5, hf(d.User.ChangePassword))
 	rt.Handle(http.MethodPost, "/api/users/me/avatar", false, 10, hf(d.User.UploadAvatar))
 	rt.Handle(http.MethodDelete, "/api/users/me/avatar", false, 10, hf(d.User.DeleteAvatar))
+	// GAP2 我的设备（auth 档；GAP2 设计 §2.3 #2）。
+	rt.HandlePolicy(http.MethodGet, "/api/users/me/devices", rbac.AuthPolicy(), 0, hf(d.User.ListMyDevices))
 	rt.Handle(http.MethodGet, "/api/avatars/{filename}", true, 60, hf(d.User.GetAvatar))
 
 	// ---- 设备端协议（公开，§1.4）：不引入设备 token；设备维度限流
@@ -273,6 +278,9 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 	rt.HandlePolicy(http.MethodGet, "/api/devices", rbac.PermPolicy(rbac.CodeDevicesView), 0, hf(d.Devices.ListDevices))
 	rt.HandlePolicy(http.MethodPatch, "/api/devices/status", rbac.PermPolicy(rbac.CodeDevicesStatus), 0, hf(d.Devices.UpdateDeviceStatus))
 	rt.HandlePolicy(http.MethodPatch, "/api/devices/{guid}", rbac.PermPolicy(rbac.CodeDevicesEdit), 0, hf(d.Devices.UpdateDevice))
+	// GAP2 设备个人归属（§2.3）：assign 走新码 devices.assign（device_group
+	// 档，requires devices.view+users.view）；me-devices 为 auth 档。
+	rt.HandlePolicy(http.MethodPatch, "/api/devices/{guid}/assign", rbac.PermPolicy(rbac.CodeDevicesAssign), 0, hf(d.Devices.AssignDevice))
 	rt.HandlePolicy(http.MethodDelete, "/api/devices/{guid}", rbac.PermPolicy(rbac.CodeDevicesDelete), 0, hf(d.Devices.DeleteDevice))
 	rt.HandlePolicy(http.MethodPost, "/api/devices/{uuid}/disconnect", rbac.PermPolicy(rbac.CodeDevicesDisconnect), 0, hf(d.Devices.Disconnect))
 
@@ -345,6 +353,8 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 	rt.HandlePolicy(http.MethodDelete, "/api/users/{guid}", rbac.PermPolicy(rbac.CodeUsersDelete), 0, hf(d.User.DeleteUser))
 	rt.HandlePolicy(http.MethodPatch, "/api/users/{guid}/security", rbac.PermPolicy(rbac.CodeUsersSecurity), 0, hf(d.User.UpdateUserSecurity))
 	rt.HandlePolicy(http.MethodDelete, "/api/users/{guid}/sessions", rbac.PermPolicy(rbac.CodeUsersForceLogout), 0, hf(d.User.ForceLogout))
+	// GAP2 按用户反查设备（users.view 只读，OQ-8；GAP2 设计 §2.3 #3）。
+	rt.HandlePolicy(http.MethodGet, "/api/users/{guid}/devices", rbac.PermPolicy(rbac.CodeUsersView), 0, hf(d.User.ListUserDevices))
 	rt.HandlePolicy(http.MethodGet, "/api/admin/users", rbac.PermPolicy(rbac.CodeUsersView), 0, hf(d.User.ListAdminUsers))
 
 	// ---- 审计域（M3 T04 实现；★ 上报单数路径 Public + per-IP
@@ -359,6 +369,8 @@ func (rt *Router) registerDomainRoutes(d *Domain) {
 	rt.HandlePolicy(http.MethodGet, "/api/audits/file", rbac.PermPolicy(rbac.CodeAuditView), 0, hf(d.Audit.ListFile))
 	rt.HandlePolicy(http.MethodGet, "/api/audits/alarm", rbac.PermPolicy(rbac.CodeAuditView), 0, hf(d.Audit.ListAlarm))
 	rt.HandlePolicy(http.MethodGet, "/api/audits/console", rbac.PermPolicy(rbac.CodeAuditView), 0, hf(d.Audit.ListConsole))
+	// ---- GAP2 登录审计查询（audit.view；新表 login_audits）----
+	rt.HandlePolicy(http.MethodGet, "/api/audits/login", rbac.PermPolicy(rbac.CodeAuditView), 0, hf(d.Audit.ListLogin))
 
 	// ---- 仪表盘域（M3 T04 实现；双端点 super administrator）----
 	rt.HandlePolicy(http.MethodGet, "/api/dashboard", rbac.SuperAdminPolicy(), 0, hf(d.Dashboard.Overview))
@@ -446,6 +458,9 @@ func (rt *Router) registerM3DomainRoutes(d *Domain) {
 	rt.HandlePolicy(http.MethodGet, "/api/settings/ldap", rbac.AdminGuardPolicy(), 0, hf(d.Settings.LdapGet))
 	rt.HandlePolicy(http.MethodPut, "/api/settings/ldap", rbac.AdminGuardPolicy(), 0, hf(d.Settings.LdapPut))
 	rt.HandlePolicy(http.MethodPost, "/api/settings/ldap/test", rbac.AdminGuardPolicy(), 5, hf(d.Settings.LdapTest))
+	// ---- GAP2 强制 MFA 策略（AdminGuard；GAP2 G4/OQ-5）----
+	rt.HandlePolicy(http.MethodGet, "/api/settings/mfa", rbac.AdminGuardPolicy(), 0, hf(d.Settings.MfaGet))
+	rt.HandlePolicy(http.MethodPut, "/api/settings/mfa", rbac.AdminGuardPolicy(), 0, hf(d.Settings.MfaPut))
 
 	// ---- OIDC 提供者域（全 Admin）----
 	rt.HandlePolicy(http.MethodGet, "/api/oidc-providers", rbac.AdminGuardPolicy(), 0, hf(d.OidcAdmin.List))

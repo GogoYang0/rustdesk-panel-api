@@ -57,8 +57,8 @@ func TestMigrateUpShowDown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Version: %v", err)
 	}
-	if v != 3 || dirty {
-		t.Errorf("version = %d dirty = %v, want 3 false", v, dirty)
+	if v != 4 || dirty {
+		t.Errorf("version = %d dirty = %v, want 4 false", v, dirty)
 	}
 
 	// 幂等：重复 Up 无错（ErrNoChange 视为成功）。
@@ -70,8 +70,8 @@ func TestMigrateUpShowDown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Show: %v", err)
 	}
-	if len(infos) != 3 {
-		t.Fatalf("Show len = %d, want 3: %+v", len(infos), infos)
+	if len(infos) != 4 {
+		t.Fatalf("Show len = %d, want 4: %+v", len(infos), infos)
 	}
 	if infos[0].Version != 1 || !infos[0].Applied || infos[0].Name != "m1_baseline" {
 		t.Errorf("Show[0] = %+v", infos[0])

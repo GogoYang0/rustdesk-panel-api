@@ -880,6 +880,9 @@ func TestM3SecurityPublicSurfaceClosed(t *testing.T) {
 		"GET /api/settings/frontend":  true,
 		"GET /":                       true,
 		"GET /files/{path}":           true,
+		// GAP2 强制 MFA 绑定（公开凭 mfa_enroll 步会话 secret；设计 §3.2）。
+		"POST /api/auth/mfa/enroll":        true,
+		"POST /api/auth/mfa/enroll/verify": true,
 	}
 
 	actualPublic := map[string]bool{}

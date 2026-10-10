@@ -80,3 +80,11 @@ func (r *LoginSessionRepo) DeleteUnused(ctx context.Context, userGuid string) er
 		Where("userGuid = ? AND used = ?", userGuid, false).
 		Delete(&entity.LoginSession{}).Error
 }
+
+// UpdateCode 更新会话 code 列（GAP2 G2：mfa_enroll 步会话暂存 pending
+// TOTP secret，users.info 不动）。
+func (r *LoginSessionRepo) UpdateCode(ctx context.Context, guid, code string) error {
+	return r.db.WithContext(ctx).Model(&entity.LoginSession{}).
+		Where("guid = ?", guid).
+		Update("code", code).Error
+}

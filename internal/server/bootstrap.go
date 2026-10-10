@@ -103,6 +103,12 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	groups := repository.NewUserGroupRepo(deps.DB)
 	providers := repository.NewOidcRepo(deps.DB)
 
+	// 设置域 KV 存储（GAP2 前移：mfa.* 策略与保留期清理读取口在认证域
+	// 装配期即需引用；其余 settings 子服务仍在设置域段构建）。
+	settingRepo := repository.NewSystemSettingRepo(deps.DB)
+	settingStore := settingssvc.NewStore(settingRepo)
+	settingGeneral := settingssvc.NewGeneralService(settingStore)
+
 	tokenSvc := authsvc.NewTokenService(tokenRepo, deps.Config.JWTSecret, deps.Config.JWTExpiryDays)
 	tfaSvc := authsvc.NewTfaService(users, sessions, tokenSvc)
 	passkeySvc, err := authsvc.NewPasskeyService(
@@ -112,7 +118,21 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	}
 	loginSvc := authsvc.NewAuthService(users, tokenSvc, tfaSvc, passkeySvc)
 	oidcSvc := authsvc.NewOidcFlowService(providers, users, groups, tokenSvc)
+
+	// GAP2 强制 MFA + 登录审计：策略键目录（mfa.*，category=mfa）+ 绑定
+	// 服务 + best-effort 审计记录器；三登录收敛点统一判定（OQ-3）。
+	settingMfa := settingssvc.NewMfaService(settingStore)
+	loginAudits := repository.NewLoginAuditRepo(deps.DB)
+	loginAuditRecorder := authsvc.NewLoginAuditRecorder(loginAudits, deps.Logger)
+	mfaSvc := authsvc.NewMfaService(users, sessions, tokenSvc, settingMfa).WithLogin(loginSvc)
+	loginSvc.WithMfa(mfaSvc, loginAuditRecorder)
+	tfaSvc.WithAuditRecorder(loginAuditRecorder)
+	passkeySvc.WithMfa(mfaSvc, loginAuditRecorder)
+	oidcSvc.WithMfa(mfaSvc, loginAuditRecorder)
+
 	cleanupSvc := authsvc.NewCleanupService(tokenRepo, sessions, providers, deps.Logger)
+	// GAP2 OQ-7：login_audits 纳入 general.auditRetentionDays 清理任务。
+	cleanupSvc.WithLoginAuditRetention(loginAudits, settingGeneral)
 
 	profileSvc := usersvc.NewProfileService(deps.DB, users, tokenRepo, sessions)
 	avatarSvc := usersvc.NewAvatarService(users, deps.Config.DataDir)
@@ -133,12 +153,11 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 		deps.DB, users, groups, invites, tokenRepo, sessions, authzSvc,
 		mailer, "", deps.Config.AdminUsername)
 
-	authH := handler.NewAuthHandler(loginSvc, tfaSvc, passkeySvc, tokenSvc)
+	authH := handler.NewAuthHandler(loginSvc, tfaSvc, passkeySvc, tokenSvc, mfaSvc)
 	oidcH, err := handler.NewOidcHandler(oidcSvc)
 	if err != nil {
 		return nil, err
 	}
-	userH := handler.NewUserHandler(profileSvc, avatarSvc, userSvc)
 
 	// 设备域（T03）：协议（heartbeat/sysinfo）+ /peers 查询 + /devices
 	// 管理。断连队列为进程内单例（DisconnectStore），心跳与管理动作
@@ -164,9 +183,14 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	querySvc := devicesvc.NewQueryService(peerRepo, sysinfoRepo, users, deviceGroupRepo, strategyRepo)
 	adminSvc := devicesvc.NewAdminService(
 		authzSvc, peerRepo, sysinfoRepo, users, deviceGroupRepo, strategyRepo, disconnects)
+	// GAP2 设备个人归属域：assign/解绑（devices.assign）+ me/user 设备查询。
+	assignSvc := devicesvc.NewAssignService(
+		authzSvc, auditSvc, peerRepo, sysinfoRepo, users, deviceGroupRepo, strategyRepo)
 
 	heartbeatH := handler.NewHeartbeatHandler(heartbeatSvc, sysinfoSvc)
-	deviceH := handler.NewDeviceHandler(authzSvc, querySvc, adminSvc)
+	deviceH := handler.NewDeviceHandler(authzSvc, querySvc, adminSvc, assignSvc)
+	// userH 依赖 assignSvc（GAP2 设备归属查询端点），在 assignSvc 装配后构建。
+	userH := handler.NewUserHandler(profileSvc, avatarSvc, userSvc, assignSvc)
 
 	// 设备组与策略域（T04）：设备组（accessible/ListAccessible 双源、
 	// device_count 批量计数、加减设备按 peer.id 命中）与策略（CRUD/
@@ -203,7 +227,7 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 
 	auditReportSvc := auditsvc.NewReportService(connAuditRepo, fileAuditRepo, alarmAuditRepo)
 	auditQuerySvc := auditsvc.NewQueryService(
-		authzSvc, connAuditRepo, fileAuditRepo, alarmAuditRepo, auditRepo, peerRepo)
+		authzSvc, connAuditRepo, fileAuditRepo, alarmAuditRepo, auditRepo, peerRepo, loginAudits)
 	dashboardSvc := dashboardsvc.NewService(
 		dashboardRepo, addressBookRepo, connAuditRepo, fileAuditRepo, alarmAuditRepo,
 		users, deps.Config.DataDir)
@@ -246,14 +270,13 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	nexusSvc := nexussvc.NewNexusService(deps.DB, deps.Config.NexusUpstream, deps.Config.DataDir)
 	nexusH := handler.NewNexusHandler(nexusSvc)
 
-	// 设置域（M3 T07，事实④）：system_settings KV 服务 + general/smtp/	// ldap/frontend 四子服务；掩码约定与 404 固定文案由服务层承担。
-	settingRepo := repository.NewSystemSettingRepo(deps.DB)
-	settingStore := settingssvc.NewStore(settingRepo)
-	settingGeneral := settingssvc.NewGeneralService(settingStore)
+	// 设置域（M3 T07，事实④）：system_settings KV 存储（store/general
+	// 已前移至认证域段，GAP2）+ smtp/ldap/frontend/mfa 子服务；掩码约定
+	// 与 404 固定文案由服务层承担。
 	settingSmtp := settingssvc.NewSmtpService(settingStore)
 	settingLdap := settingssvc.NewLdapService(settingStore)
 	settingFrontend := settingssvc.NewFrontendService(settingGeneral)
-	settingsH := handler.NewSettingsHandler(settingGeneral, settingSmtp, settingLdap, settingFrontend)
+	settingsH := handler.NewSettingsHandler(settingGeneral, settingSmtp, settingLdap, settingFrontend, settingMfa)
 
 	// OIDC 提供者管理域（M3 T07，事实⑧）：CRUD/sort/toggle/test；
 	// discovery 缓存进程内单例（issuer 变更时失效）。

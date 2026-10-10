@@ -28,6 +28,10 @@ type PasskeyService struct {
 	sessions *repository.LoginSessionRepo
 	creds    *repository.PasskeyRepo
 	tokens   *TokenService
+	// mfa 强制 MFA 判定服务（GAP2 OQ-3：免密通道统一执行；nil 时无强制）。
+	mfa *MfaService
+	// audits 登录审计记录器（GAP2 G3；nil 时跳过）。
+	audits *LoginAuditRecorder
 }
 
 // NewPasskeyService 构建服务（RPID 与可信 origins 来自 env，
@@ -46,6 +50,13 @@ func NewPasskeyService(rpid string, origins []string, users *repository.UserRepo
 		return nil, fmt.Errorf("passkey: init webauthn failed: %w", err)
 	}
 	return &PasskeyService{web: w, users: users, sessions: sessions, creds: creds, tokens: tokens}, nil
+}
+
+// WithMfa 注入强制 MFA 服务与登录审计记录器（bootstrap 装配；GAP2）。
+func (s *PasskeyService) WithMfa(mfa *MfaService, audits *LoginAuditRecorder) *PasskeyService {
+	s.mfa = mfa
+	s.audits = audits
+	return s
 }
 
 // BeginRegistration 开始注册（§2.1 #8）：返回 PublicKeyCredentialCreationOptionsJSON，
@@ -270,10 +281,24 @@ func (s *PasskeyService) VerifyAuthLogin(ctx context.Context, req dto.VerifyAuth
 	newCount := cred.Authenticator.SignCount
 	oldCount := credRecord.Counter
 	if (newCount != 0 || oldCount != 0) && newCount <= oldCount {
+		s.recordLoginAudit(ctx, entity.LoginAuditResultFailed, sess.Method, user, auditReasonPasskeyFailed)
 		return nil, Unauthorized(msgPasskeyRejected)
 	}
 	if err := s.creds.UpdateCounter(ctx, credRecord.Guid, newCount); err != nil {
 		return nil, err
+	}
+	// GAP2 OQ-3：passkey 免密通道统一执行强制 MFA 判定——策略命中且
+	// 无 TOTP/passkey-2FA（本分支用户 passkey-2FA 必然未开启，否则
+	// 走 passkey_tfa 分支）→ 转入 mfa_enroll 绑定步会话，不发 access_token。
+	if sess.Method == sessionMethodPasskey && s.mfa != nil {
+		enforced, err := s.mfa.Enforced(ctx, user)
+		if err != nil {
+			return nil, err
+		}
+		if enforced {
+			s.recordLoginAudit(ctx, entity.LoginAuditResultMfaEnrollRequired, entity.LoginAuditMethodPasskey, user, "")
+			return s.mfa.BeginMfaEnrollment(ctx, user)
+		}
 	}
 	if err := s.sessions.MarkUsed(ctx, sess.Guid); err != nil {
 		return nil, err
@@ -282,12 +307,22 @@ func (s *PasskeyService) VerifyAuthLogin(ctx context.Context, req dto.VerifyAuth
 	if err != nil {
 		return nil, err
 	}
+	// GAP2 G3：免密/passkey-2FA 成功审计（method 归一 passkey 枚举）。
+	s.recordLoginAudit(ctx, entity.LoginAuditResultSuccess, entity.LoginAuditMethodPasskey, user, "")
 	payload := dto.BuildUserPayload(user)
 	return &api.LoginResponse{
 		AccessToken: &token,
 		Type:        api.AccessToken,
 		User:        &payload,
 	}, nil
+}
+
+// recordLoginAudit passkey 路径的 best-effort 审计（GAP2 G3）。
+func (s *PasskeyService) recordLoginAudit(ctx context.Context, result, method string, user *entity.User, reason string) {
+	s.audits.Record(ctx, LoginAuditEntry{
+		UserGuid: strPtr(user.Guid), Username: user.Username,
+		Result: result, Method: method, Reason: reason,
+	})
 }
 
 // BeginTfaLogin passkey 二次验证第一步：为已认证用户生成断言挑战

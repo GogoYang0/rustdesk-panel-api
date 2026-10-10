@@ -42,6 +42,10 @@ type OidcFlowService struct {
 	users     *repository.UserRepo
 	groups    *repository.UserGroupRepo
 	tokens    *TokenService
+	// mfa 强制 MFA 判定服务（GAP2 OQ-3：免密通道统一执行；nil 时无强制）。
+	mfa *MfaService
+	// audits 登录审计记录器（GAP2 G3；nil 时跳过）。
+	audits *LoginAuditRecorder
 	// fallback env OIDC 配置（表中无 enabled 记录时的降级形态）。
 	fallback *EnvOidcFallback
 }
@@ -55,6 +59,13 @@ func NewOidcFlowService(providers *repository.OidcRepo, users *repository.UserRe
 // WithEnvFallback 注入 env OIDC fallback（bootstrap 装配；nil 时无降级）。
 func (s *OidcFlowService) WithEnvFallback(fallback *EnvOidcFallback) *OidcFlowService {
 	s.fallback = fallback
+	return s
+}
+
+// WithMfa 注入强制 MFA 服务与登录审计记录器（bootstrap 装配；GAP2）。
+func (s *OidcFlowService) WithMfa(mfa *MfaService, audits *LoginAuditRecorder) *OidcFlowService {
+	s.mfa = mfa
+	s.audits = audits
 	return s
 }
 
@@ -269,6 +280,25 @@ func (s *OidcFlowService) HandleCallback(ctx context.Context, q dto.CallbackQuer
 	if err != nil {
 		return dto.CallbackResult{}, err
 	}
+	// GAP2 OQ-3：OIDC 免密通道统一执行强制 MFA 判定（在签发收敛点前）。
+	// 策略命中且无 2FA → 不签发 token（防绕过），state 以 error 完结并
+	// 引导用户走口令登录的 mfa_enroll 绑定流程；审计记 mfa_enroll_required。
+	if s.mfa != nil {
+		enforced, err := s.mfa.Enforced(ctx, user)
+		if err != nil {
+			return dto.CallbackResult{}, err
+		}
+		if enforced {
+			s.audits.Record(ctx, LoginAuditEntry{
+				UserGuid: strPtr(user.Guid), Username: user.Username,
+				Result: entity.LoginAuditResultMfaEnrollRequired,
+				Method: entity.LoginAuditMethodOidc,
+			})
+			_ = s.providers.CompleteState(ctx, state.Code, repository.StatePatch{Status: strPtr(oidcStatusError)})
+			return renderError("MFA enrollment required",
+				"Two-factor authentication is enforced. Please log in with username and password to enroll first.")
+		}
+	}
 	dev := stateDevice(state)
 	token, err := s.tokens.Generate(ctx, user, dev)
 	if err != nil {
@@ -281,6 +311,13 @@ func (s *OidcFlowService) HandleCallback(ctx context.Context, q dto.CallbackQuer
 	}); err != nil {
 		return dto.CallbackResult{}, err
 	}
+	// GAP2 G3：OIDC 登录成功审计（method=oidc）。
+	s.audits.Record(ctx, LoginAuditEntry{
+		UserGuid: strPtr(user.Guid), Username: user.Username,
+		Result: entity.LoginAuditResultSuccess,
+		Method: entity.LoginAuditMethodOidc,
+		DeviceId: dev.Id, DeviceUuid: dev.Uuid,
+	})
 	res := dto.CallbackResult{OK: true, Title: "Login successful", Message: "You can now return to the application."}
 	if state.FrontendRedirectUrl != "" {
 		// web 模式：token 走 URL fragment（不进服务器访问日志）。

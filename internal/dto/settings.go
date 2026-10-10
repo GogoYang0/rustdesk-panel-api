@@ -92,3 +92,10 @@ func hasPrefixFold(s, prefix string) bool {
 	}
 	return true
 }
+
+// MfaSettings / UpdateMfaSettings 类型别名至 oapi-codegen 产物
+// （GAP2 设计 §3.1：强制 MFA 策略视图与更新载荷，单一契约源零漂移）。
+type (
+	MfaSettings       = api.MfaSettings
+	UpdateMfaSettings = api.UpdateMfaSettings
+)

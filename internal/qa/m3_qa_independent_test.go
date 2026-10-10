@@ -726,7 +726,7 @@ func TestQA_M3_ThreeWay_PolicyDistribution(t *testing.T) {
 		t.Errorf("路由总数 = %d, want 172", total)
 	}
 	want := map[string]int{
-		"public": 19, "auth": 53, "perm": 62, "admin_guard": 23, "super_admin": 7,
+		"public": 21, "auth": 54, "perm": 65, "admin_guard": 25, "super_admin": 7,
 	}
 	for policy, w := range want {
 		if counts[policy] != w {
