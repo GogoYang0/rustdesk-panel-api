@@ -124,7 +124,7 @@ func assembleDomain(deps RouterDeps) (*Domain, error) {
 	settingMfa := settingssvc.NewMfaService(settingStore)
 	loginAudits := repository.NewLoginAuditRepo(deps.DB)
 	loginAuditRecorder := authsvc.NewLoginAuditRecorder(loginAudits, deps.Logger)
-	mfaSvc := authsvc.NewMfaService(users, sessions, tokenSvc, settingMfa).WithLogin(loginSvc)
+	mfaSvc := authsvc.NewMfaService(users, sessions, tokenSvc, settingMfa).WithLogin(loginSvc).WithAuditRecorder(loginAuditRecorder)
 	loginSvc.WithMfa(mfaSvc, loginAuditRecorder)
 	tfaSvc.WithAuditRecorder(loginAuditRecorder)
 	passkeySvc.WithMfa(mfaSvc, loginAuditRecorder)

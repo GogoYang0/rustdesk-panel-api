@@ -48,6 +48,8 @@ type MfaService struct {
 	// 同包互引，装配期回填，见 bootstrap）。
 	login *AuthService
 	policy MfaPolicyReader
+	// audits 登录审计记录器（GAP2 G3；nil 时跳过）。
+	audits *LoginAuditRecorder
 }
 
 // NewMfaService 构建服务。
@@ -60,6 +62,12 @@ func NewMfaService(users *repository.UserRepo, sessions *repository.LoginSession
 // 装配期调用，解除 AuthService ↔ MfaService 构造环）。
 func (s *MfaService) WithLogin(login *AuthService) *MfaService {
 	s.login = login
+	return s
+}
+
+// WithAuditRecorder 注入登录审计记录器（bootstrap 装配；GAP2）。
+func (s *MfaService) WithAuditRecorder(audits *LoginAuditRecorder) *MfaService {
+	s.audits = audits
 	return s
 }
 
@@ -160,6 +168,11 @@ func (s *MfaService) VerifyEnroll(ctx context.Context, secret, code string, dev 
 		return nil, BadRequest("No pending two-factor enrollment")
 	}
 	if !totp.Validate(code, pending) {
+		s.audits.Record(ctx, LoginAuditEntry{
+			UserGuid: strPtr(user.Guid), Username: user.Username,
+			Result: entity.LoginAuditResultTfaFailed,
+			Method: entity.LoginAuditMethodPassword, Reason: auditReasonTfaCodeInvalid,
+		})
 		return nil, Unauthorized(msgTfaCodeInvalid)
 	}
 	// username 匹配性复核（对齐 completeStep 场景 B 第 12 步语义）。
@@ -176,6 +189,12 @@ func (s *MfaService) VerifyEnroll(ctx context.Context, secret, code string, dev 
 	if err := s.sessions.MarkUsed(ctx, sess.Guid); err != nil {
 		return nil, err
 	}
+	// GAP2 时序图第 8 步：绑定完成审计（mfa_enroll_completed）。
+	s.audits.Record(ctx, LoginAuditEntry{
+		UserGuid: strPtr(user.Guid), Username: user.Username,
+		Result: entity.LoginAuditResultMfaEnrollComplete,
+		Method: entity.LoginAuditMethodPassword,
+	})
 	// completeLogin 收敛签发（GAP2 时序图第 8 步）。
 	return s.login.completeLogin(ctx, user, dev)
 }
