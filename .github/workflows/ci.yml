@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          # 钉版本：v2.x 由 Go 1.27 构建（v1.x 无法分析 go 1.27 模块）；action v7 才支持 golangci-lint v2
+          version: v2.14.0
+      - name: go vet
+        run: go vet ./...
+      - name: oapi-codegen freshness check
+        run: |
+          # openapi.yaml 是单一契约源：types.gen.go 必须与其一致（重新生成后不得产生 diff）
+          go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.0 -config oapi-codegen.yaml openapi.yaml
+          git diff --exit-code internal/api/types.gen.go
+      - name: go test (race)
+        run: go test -race ./...
+      - name: contract tests
+        run: go test ./internal/contract/... -v
+      - name: build (static)
+        run: CGO_ENABLED=0 go build -trimpath -o bin/rustdesk-panel-api ./cmd/api

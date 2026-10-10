@@ -18,9 +18,13 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
+      image: ${{ steps.img.outputs.image }}
     steps:
       - id: v
         run: echo "version=0.0.0-nightly.$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+      - id: img
+        # GHCR 镜像名必须全小写，而 github.repository 保留大小写
+        run: echo "image=ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
   build:
     needs: prepare
@@ -74,7 +78,7 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: "ghcr.io/${{ github.repository }}:nightly"
+          tags: "${{ needs.prepare.outputs.image }}:nightly"
 
   # 说明：DockerHub 推送任务待提供 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN 后补充
   # （计划书 Q5 决议：编写 docker push 相关配置前先向项目所有者确认）。

@@ -18,6 +18,7 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
       prerelease: ${{ steps.v.outputs.prerelease }}
+      image: ${{ steps.img.outputs.image }}
     steps:
       - id: v
         env:
@@ -29,6 +30,9 @@ jobs:
             *)                         echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
           esac
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      - id: img
+        # GHCR 镜像名必须全小写，而 github.repository 保留大小写
+        run: echo "image=ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
   build:
     needs: prepare
@@ -73,7 +77,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: "ghcr.io/${{ github.repository }}"
+          images: "${{ needs.prepare.outputs.image }}"
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
